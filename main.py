@@ -26,11 +26,9 @@ WHERE (C.ID > 10) AND (C.ID < 20);
 """
 
 raw = """
-SELECT ID, NOME, SEXO
-FROM CLIENTE 
-WHERE ID > 10 AND ID < 20;
+SELECT codigo, nome, capacidade_instalada
+FROM usinas;
 """
-
 
 statements = sqlparse.parse(raw)
 tokens: List[Token] = [

@@ -1,6 +1,7 @@
 from abc import ABC
 from app.adapters.repository.connection import Connection
 from app.adapters.repository.dataio import DataIO
+from app.adapters.repository.dataio import factory as io_factory
 from app.adapters.repository.partitioner import factory as part_factory
 import pandas as pd
 from sqlparse.sql import Token
@@ -11,57 +12,78 @@ from sqlparse.sql import (
     Identifier,
     IdentifierList,
 )
-from app.utils.sql import identifierlist2dict, aliases2dict, where2pandas
+from os.path import join
+from app.utils.sql import (
+    identifierlist2dict,
+    aliases2dict,
+    join_comparison_mapping,
+    where2filtermap,
+    where2pandas,
+)
+from app.utils.types import enforce_column_types
 
 
 class QueryParser(ABC):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class CREATEParser(QueryParser):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class ALTERParser(QueryParser):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class DROPParser(QueryParser):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class INSERTParser(QueryParser):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class UPDATEParser(QueryParser):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class DELETEParser(QueryParser):
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def parse(cls, tokens: list[Token], conn: Connection):
         raise NotImplementedError
 
 
 class SELECTParser(QueryParser):
     @classmethod
     def __parse_select_from_table(
-        cls, table: str, columns: list[str], conn: Connection, dataio: DataIO
+        cls, table: str, filters: str, columns: list[str], conn: Connection
     ):
-        pass
+        table_conn = conn.access(table)
+        table_io = io_factory(table_conn.schema["format"])
+        # TODO - parse filters and discover which files
+        # must be read based on schema definition
+        df = table_io.read(
+            join(table_conn.uri, table_conn.schema["data"]),
+            columns=columns,
+            storage_options=table_conn.options,
+        )
+        # df = enforce_column_types(df, table_conn.schema)
+        # TODO - concatenate all files that must be read
+        # Rename due columns
+        df.columns
+        return df
 
     @classmethod
     def __parse_identifier_list(
@@ -76,33 +98,64 @@ class SELECTParser(QueryParser):
         return aliases2dict(identifier_list)
 
     @classmethod
-    def __parse_join_mappings(cls, tokens: list[Token]) -> dict[str, str]:
-        pass
+    def __parse_inner_join_mappings(
+        cls, tokens: list[Token], alias_map: dict[str, str]
+    ) -> dict[str, str]:
+        join_mappings = [t for t in tokens if type(t) == Comparison]
+        return join_comparison_mapping(join_mappings, alias_map)
 
     @classmethod
-    def __parse_filters(
+    def __parse_filters_for_reading(
         cls, tokens: list[Token], alias_map: dict[str, str]
-    ) -> str | None:
+    ) -> dict[str, dict[str, str]]:
+        """
+        Filters the filters that might help deciding which
+        partition files must be read, optimizing reading time.
+
+        Filters that are considered:
+
+        - Column equality to constant
+        - Column unequality to constant
+
+        """
         filters = [t for t in tokens if type(t) == Where]
+        # return filters
         if len(filters) > 0:
-            return where2pandas(filters, alias_map)
+            return where2filtermap(filters[0].tokens, alias_map)
         else:
             return None
 
     @classmethod
-    def parse(cls, tokens: list[Token], conn: Connection, dataio: DataIO):
+    def __parse_filters_for_query(
+        cls, tokens: list[Token], alias_map: dict[str, str]
+    ) -> str | None:
+        filters = [t for t in tokens if type(t) == Where]
+        if len(filters) > 0:
+            return where2pandas(filters[0].tokens, alias_map)
+        else:
+            return None
+
+    @classmethod
+    def parse(cls, tokens: list[Token], conn: Connection):
         identifiers = cls.__parse_identifier_list(tokens)
         aliases = cls.__parse_identifier_aliases(tokens)
-        filters = cls.__parse_filters(tokens, aliases)
-        dfs: dict[str, pd.DataFrame] = []
+        joins = cls.__parse_inner_join_mappings(tokens, aliases)
+        reading_filters = cls.__parse_filters_for_reading(tokens, aliases)
+        # return reading_filters
+        where_filters = cls.__parse_filters_for_query(tokens, aliases)
+        dfs: dict[str, pd.DataFrame] = {}
         for alias, name in aliases.items():
+            # TODO - format and pass filters
             dfs[alias] = cls.__parse_select_from_table(
-                name, identifiers.get(alias, []), conn, dataio
+                name, "", identifiers.get(alias, []), conn
             )
         # TODO - Process joins in order
-        df: pd.DataFrame = None
-        if filters is not None:
-            df = df.query(filters)
+        if len(joins) > 0:
+            pass
+        else:
+            df: pd.DataFrame = dfs[list(aliases.keys())[0]]
+        if where_filters is not None:
+            df = df.query(where_filters)
         return df
 
 

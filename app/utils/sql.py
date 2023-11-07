@@ -10,7 +10,7 @@ from sqlparse.tokens import Newline, Whitespace, Punctuation
 
 
 def __filter_punctuation_tokens(tokens: list[Token]) -> list[Token]:
-    __ETC_TOKENS = [Newline, Whitespace, Punctuation]
+    __ETC_TOKENS = [Newline, Whitespace]
     return [t for t in tokens if t.ttype not in __ETC_TOKENS]
 
 
@@ -51,29 +51,46 @@ def __column_name_with_alias(
         return token.get_real_name()
 
 
-def where2pandas(
-    tokens: list[Token], table_alias_map: dict[str, str] = {}
-) -> dict[str, str]:
+def join_comparison_mapping(
+    comparisons: list[Comparison], table_alias_map: dict[str, str]
+) -> list[tuple[str, str]]:
+    mappings: list[tuple[str, str]] = []
+    for c in comparisons:
+        identifiers = [
+            t
+            for t in __filter_punctuation_tokens(c.tokens)
+            if type(t) == Identifier
+        ]
+        mappings.append(
+            tuple(
+                [
+                    __column_name_with_alias(i, table_alias_map)
+                    for i in identifiers
+                ]
+            )
+        )
+    return mappings
+
+
+def where2filtermap(
+    tokens: list[Token],
+    table_alias_map: dict[str, str] = {},
+    preprocessing_func=__filter_punctuation_tokens,
+) -> dict[str, dict[str, str]]:
     def __parse_filters(token_or_list: Token | list) -> str:
         ttype = type(token_or_list)
-        logical_operator_mappings: dict[str, str] = {"AND": "&", "OR": "|"}
-        if ttype == Parenthesis:
-            return (
-                "("
-                + __parse_filters(
-                    __filter_punctuation_tokens(token_or_list.tokens)
-                )
-                + ")"
-            )
-        elif ttype == Comparison:
-            return __parse_filters(
-                __filter_punctuation_tokens(token_or_list.tokens)
-            )
+        logical_operator_mappings: dict[str, str] = {
+            "=": "==",
+            "AND": "&",
+            "OR": "|",
+            "NOT": "not",
+            "IN": "in",
+        }
+        if ttype in [Parenthesis, IdentifierList, Comparison]:
+            return __parse_filters(preprocessing_func(token_or_list.tokens))
         elif ttype == list:
-            return " ".join(
-                __parse_filters(t)
-                for t in __filter_punctuation_tokens(token_or_list)
-            )
+            print(tokens)
+            return " ".join(__parse_filters(t) for t in token_or_list)
         elif ttype == Identifier:
             return __column_name_with_alias(token_or_list, table_alias_map)
         else:
@@ -81,6 +98,36 @@ def where2pandas(
             return logical_operator_mappings.get(value, value)
 
     pandas_query_elements = []
-    for t in __filter_punctuation_tokens(tokens[1:]):
+    for t in preprocessing_func(tokens[1:]):
+        pandas_query_elements.append(__parse_filters(t))
+    return " ".join(pandas_query_elements)
+
+
+def where2pandas(
+    tokens: list[Token],
+    table_alias_map: dict[str, str] = {},
+    preprocessing_func=__filter_punctuation_tokens,
+) -> str:
+    def __parse_filters(token_or_list: Token | list) -> str:
+        ttype = type(token_or_list)
+        logical_operator_mappings: dict[str, str] = {
+            "=": "==",
+            "AND": "&",
+            "OR": "|",
+            "NOT": "not",
+            "IN": "in",
+        }
+        if ttype in [Parenthesis, Identifier, Comparison]:
+            return __parse_filters(preprocessing_func(token_or_list.tokens))
+        elif ttype == list:
+            return " ".join(__parse_filters(t) for t in token_or_list)
+        elif ttype == Identifier:
+            return __column_name_with_alias(token_or_list, table_alias_map)
+        else:
+            value = token_or_list.normalized
+            return logical_operator_mappings.get(value, value)
+
+    pandas_query_elements = []
+    for t in preprocessing_func(tokens[1:]):
         pandas_query_elements.append(__parse_filters(t))
     return " ".join(pandas_query_elements)

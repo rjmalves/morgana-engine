@@ -8,13 +8,8 @@ import pandas as pd
 def parse(
     query: str,
     conn: Connection,
-    dataio: DataIO | None = None,
 ) -> pd.DataFrame | dict | None:
-    # Replaces arguments by default values
-    if dataio is None:
-        dataio = ParquetIO()
-    # Processes the query
     tokens = query2tokens(query)
     parser = query_factory(tokens[0].normalized)
-    r = parser.parse(tokens, conn, dataio)
+    r = parser.parse(tokens, conn)
     return r

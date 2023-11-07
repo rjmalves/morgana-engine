@@ -24,6 +24,11 @@ class Connection(ABC):
     def schema(self) -> dict:
         raise NotImplementedError
 
+    @abstractmethod
+    def access(self, table: str) -> "Connection":
+        raise NotImplementedError
+
+
 
 class FSConnection(Connection):
     def __init__(self, path: str, *args, **kwargs) -> None:
@@ -48,6 +53,16 @@ class FSConnection(Connection):
                 self._schema = json.load(file)
                 enforce_property_types(self._schema)
         return self._schema
+
+    @override
+    def access(self, table: str) -> "Connection":
+        tables = self.schema["properties"]
+        if table in tables:
+            return FSConnection(join(self.uri, tables[table]["$ref"]))
+        else:
+            # TODO - add error handling
+            return self
+
 
 
 class SQLConnection(Connection):

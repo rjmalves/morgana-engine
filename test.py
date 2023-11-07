@@ -5,24 +5,25 @@ from datetime import date
 from app.services.handlers import parse
 
 
-raw = """
-SELECT C.NOME, C.SEXO, E.BAIRRO, E.CIDADE, T.TIPO, T.NUMERO
-FROM CLIENTE C
-INNER JOIN ENDERECO E
-ON C.ID = E.ID_CLIENTE
-INNER JOIN TELEFONE T
-ON C.ID = T.ID_CLIENTE;
-"""
+# raw = """
+# SELECT C.NOME, C.SEXO, E.BAIRRO, E.CIDADE, T.TIPO, T.NUMERO
+# FROM CLIENTE C
+# INNER JOIN ENDERECO E
+# ON C.ID = E.ID_CLIENTE
+# INNER JOIN TELEFONE T
+# ON C.ID = T.ID_CLIENTE;
+# """
 
 raw = """
-SELECT codigo, nome, capacidade_instalada
-FROM usinas;
+SELECT codigo, nome, capacidade_instalada, data_inicio_operacao
+FROM usinas
+WHERE data_inicio_operacao NOT IN (1, 2, 3);
 """
-
 
 conn = conn_factory("FS")("/home/rogerio/git/dbrenovaveispy/tests/data")
 
-parse(raw, conn)
+df = parse(raw, conn)
+df[0].tokens[-2].tokens[1]
 
 io = io_factory("")
 io.read()

@@ -10,18 +10,11 @@
             "partitions": {
                 "type": "list",
                 "mappings": {
-                    "data2.parquet.gzip": [
+                    "data.parquet.gzip": [
                         1,
                         2,
                         3,
                         4
-                    ],
-                    "data3.parquet.gzip": [
-                        5,
-                        6,
-                        7,
-                        8,
-                        null
                     ]
                 }
             }
@@ -50,10 +43,6 @@
                     "data.parquet.gzip": [
                         null,
                         "2023-11-01"
-                    ],
-                    "data2.parquet.gzip": [
-                        "2023-11-02",
-                        null
                     ]
                 }
             }

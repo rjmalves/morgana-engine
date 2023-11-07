@@ -6,11 +6,11 @@ class DataIO(ABC):
     pass
 
     @classmethod
-    def read(cls, path: str, options: dict) -> pd.DataFrame:
+    def read(cls, path: str, *args, **kwargs) -> pd.DataFrame:
         pass
 
     @classmethod
-    def write(path: str, options: dict) -> pd.DataFrame:
+    def write(path: str,  *args, **kwargs) -> pd.DataFrame:
         pass
 
 
@@ -18,11 +18,11 @@ class ParquetIO(DataIO):
     pass
 
     @classmethod
-    def read(cls, path: str, options: dict) -> pd.DataFrame:
-        return pd.read_parquet(path, storage_options=options)
+    def read(cls, path: str,  *args, **kwargs) -> pd.DataFrame:
+        return pd.read_parquet(path, *args, **kwargs)
 
     @classmethod
-    def write(cls, path: str, options: dict) -> pd.DataFrame:
+    def write(cls, path: str,  *args, **kwargs) -> pd.DataFrame:
         raise NotImplementedError
 
 

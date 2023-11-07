@@ -1,0 +1,10 @@
+{
+    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "usinas": {
+            "$ref": "usinas"
+        }
+    }
+}
