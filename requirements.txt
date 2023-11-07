@@ -1,0 +1,4 @@
+sqlparse
+jsonschema
+pandas
+pandas-stubs

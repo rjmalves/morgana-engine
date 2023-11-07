@@ -1,0 +1,72 @@
+{
+    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/usinas/.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "data": "data.parquet.gzip",
+    "format": "PARQUET",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "partitions": {
+                "type": "list",
+                "mappings": {
+                    "data2.parquet.gzip": [
+                        1,
+                        2,
+                        3,
+                        4
+                    ],
+                    "data3.parquet.gzip": [
+                        5,
+                        6,
+                        7,
+                        8,
+                        null
+                    ]
+                }
+            }
+        },
+        "codigo": {
+            "type": "string"
+        },
+        "nome": {
+            "type": "string"
+        },
+        "capacidade_instalada": {
+            "type": "number"
+        },
+        "latitude": {
+            "type": "number"
+        },
+        "longitude": {
+            "type": "number"
+        },
+        "data_inicio_operacao": {
+            "type": "string",
+            "format": "date",
+            "partitions": {
+                "type": "range",
+                "mappings": {
+                    "data.parquet.gzip": [
+                        null,
+                        "2023-11-01"
+                    ],
+                    "data2.parquet.gzip": [
+                        "2023-11-02",
+                        null
+                    ]
+                }
+            }
+        },
+        "data_inicio_simulacao": {
+            "type": "string",
+            "format": "date"
+        },
+        "subsistema_geografico": {
+            "type": "string"
+        },
+        "subsistema_eletrico": {
+            "type": "string"
+        }
+    }
+}
