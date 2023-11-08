@@ -68,17 +68,37 @@ class DELETEParser(QueryParser):
 class SELECTParser(QueryParser):
     @classmethod
     def __parse_select_from_table(
-        cls, table: str, filters: str, columns: list[str], conn: Connection
+        cls,
+        table: str,
+        filters: list[list[Token]],
+        columns: list[str],
+        conn: Connection,
     ):
         table_conn = conn.access(table)
         table_io = io_factory(table_conn.schema["format"])
         # TODO - parse filters and discover which files
         # must be read based on schema definition
+
+        # List partitioned columns from schema
+        # Check which columns are partitioned by list or range
+
+        # For each list partitioned column, check if there are filters
+        # Treat the case where the filters are of equality or belonging to set (easy)
+        # Treat the case where the filters are of inequality or not belonging to set (hard)
+
+        # For each range partitioned column, check if there are filters
+        # Treat the case where the filters are of equality or belonging to set (easy)
+        # Treat the case where the filters are of inequality or not belonging to set (hard)
+
+        # The main result is the list of filenames that must be read
+        # and concatenated.
+
         df = table_io.read(
             join(table_conn.uri, table_conn.schema["data"]),
             columns=columns,
             storage_options=table_conn.options,
         )
+        print(filters)
         # df = enforce_column_types(df, table_conn.schema)
         # TODO - concatenate all files that must be read
         # Rename due columns
@@ -107,7 +127,7 @@ class SELECTParser(QueryParser):
     @classmethod
     def __parse_filters_for_reading(
         cls, tokens: list[Token], alias_map: dict[str, str]
-    ) -> dict[str, dict[str, str]]:
+    ) -> list[tuple[str, list[Token]]]:
         """
         Filters the filters that might help deciding which
         partition files must be read, optimizing reading time.
@@ -116,6 +136,8 @@ class SELECTParser(QueryParser):
 
         - Column equality to constant
         - Column unequality to constant
+        - Column belonging to set
+        - Column not belonging to set
 
         """
         filters = [t for t in tokens if type(t) == Where]
@@ -141,13 +163,14 @@ class SELECTParser(QueryParser):
         aliases = cls.__parse_identifier_aliases(tokens)
         joins = cls.__parse_inner_join_mappings(tokens, aliases)
         reading_filters = cls.__parse_filters_for_reading(tokens, aliases)
-        # return reading_filters
         where_filters = cls.__parse_filters_for_query(tokens, aliases)
         dfs: dict[str, pd.DataFrame] = {}
         for alias, name in aliases.items():
-            # TODO - format and pass filters
             dfs[alias] = cls.__parse_select_from_table(
-                name, "", identifiers.get(alias, []), conn
+                name,
+                [f[1] for f in reading_filters if f[0] == alias],
+                identifiers.get(alias, []),
+                conn,
             )
         # TODO - Process joins in order
         if len(joins) > 0:

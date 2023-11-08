@@ -10,13 +10,18 @@ from sqlparse.tokens import Newline, Whitespace, Punctuation
 
 
 def __filter_punctuation_tokens(tokens: list[Token]) -> list[Token]:
+    __ETC_TOKENS = [Punctuation]
+    return [t for t in tokens if t.ttype not in __ETC_TOKENS]
+
+
+def __filter_space_tokens(tokens: list[Token]) -> list[Token]:
     __ETC_TOKENS = [Newline, Whitespace]
     return [t for t in tokens if t.ttype not in __ETC_TOKENS]
 
 
 def query2tokens(query: str) -> list[Token]:
     statements = sqlparse.parse(query)
-    return __filter_punctuation_tokens(statements[0].tokens)
+    return __filter_space_tokens(statements[0].tokens)
 
 
 def identifierlist2dict(
@@ -75,8 +80,122 @@ def join_comparison_mapping(
 def where2filtermap(
     tokens: list[Token],
     table_alias_map: dict[str, str] = {},
-    preprocessing_func=__filter_punctuation_tokens,
-) -> dict[str, dict[str, str]]:
+    preprocessing_func=__filter_space_tokens,
+) -> list[tuple[str, list[Token]]]:
+    def __split_list_and_or(token_list: list[Token]) -> list[list[Token]]:
+        # Breaks the list by AND / OR keywords
+        ands = [t for t in token_list if t.normalized == "AND"]
+        ors = [t for t in token_list if t.normalized == "OR"]
+        and_indices = [token_list.index(t) for t in ands]
+        or_indices = [token_list.index(t) for t in ors]
+        and_or_indices = sorted(and_indices + or_indices)
+        if len(and_or_indices) > 0:
+            split_indices = [-1] + and_or_indices + [len(token_list)]
+            return [
+                token_list[begin_index + 1 : end_index]
+                for begin_index, end_index in zip(
+                    split_indices[:-1], split_indices[1:]
+                )
+            ]
+        else:
+            return [token_list]
+
+    def __parse_filters(token_or_list: Token | list):
+        ttype = type(token_or_list)
+        if ttype == Parenthesis:
+            splitted_list = __split_list_and_or(
+                preprocessing_func(token_or_list.tokens)
+            )
+            for token_list in splitted_list:
+                __parse_filters(token_list)
+        elif ttype == Comparison:
+            # First case of interest:
+            # - One Identifier
+            # - Comparison
+            # - One constant value (Integer, Float, Simple)
+            comparison_tokens = preprocessing_func(token_or_list.tokens)
+            identifiers = [
+                t for t in comparison_tokens if type(t) == Identifier
+            ]
+            not_identifiers = [
+                t for t in comparison_tokens if type(t) != Identifier
+            ]
+            num_identifiers = len(identifiers)
+            ttypes = [t.ttype for t in not_identifiers if t.ttype is not None]
+            num_comparison = len([t for t in ttypes if "Comparison" in str(t)])
+            num_constants = len(
+                [t for t in ttypes if "Token.Literal" in str(t)]
+            )
+            if all(
+                [
+                    n == 1
+                    for n in [num_identifiers, num_comparison, num_constants]
+                ]
+            ):
+                filtermaps.append(
+                    (identifiers[0].get_parent_name(), comparison_tokens)
+                )
+        elif ttype == list:
+            comparison_tokens = preprocessing_func(token_or_list)
+            if len(comparison_tokens) == 1:
+                __parse_filters(comparison_tokens[0])
+            elif len(comparison_tokens) in [3, 4]:
+                # Second case of interest:
+                # - One Identifier
+                # - IN or NOT IN keywords
+                # - Set of values
+                identifiers = [
+                    t for t in comparison_tokens if type(t) == Identifier
+                ]
+                not_identifiers = [
+                    t for t in comparison_tokens if type(t) != Identifier
+                ]
+                num_identifiers = len(identifiers)
+                num_in_keywords = len(
+                    [t for t in comparison_tokens if t.normalized == "IN"]
+                )
+                num_parenthesis = len(
+                    [t for t in comparison_tokens if type(t) == Parenthesis]
+                )
+                if all(
+                    [
+                        n == 1
+                        for n in [
+                            num_identifiers,
+                            num_in_keywords,
+                            num_parenthesis,
+                        ]
+                    ]
+                ):
+                    filtermaps.append(
+                        (identifiers[0].get_parent_name(), comparison_tokens)
+                    )
+
+    splitted_tokens = __split_list_and_or(
+        __filter_punctuation_tokens(preprocessing_func(tokens[1:]))
+    )
+    filtermaps: list[dict[str, list[Token]]] = []
+    for token_set in splitted_tokens:
+        t_map = __parse_filters(token_set)
+        if not t_map:
+            continue
+        if type(t_map) == list:
+            filtermaps += t_map
+        else:
+            filtermaps.append(t_map)
+    return filtermaps
+    renamed_filtermaps: list[dict[str, list[Token]]] = []
+    for filtermap in filtermaps:
+        for k, v in filtermap.items():
+            renamed_filtermaps.append((table_alias_map[k], v))
+    return renamed_filtermaps
+
+
+def where2pandas(
+    tokens: list[Token],
+    table_alias_map: dict[str, str] = {},
+    preprocessing_func=__filter_space_tokens,
+) -> str:
     def __parse_filters(token_or_list: Token | list) -> str:
         ttype = type(token_or_list)
         logical_operator_mappings: dict[str, str] = {
@@ -89,7 +208,6 @@ def where2filtermap(
         if ttype in [Parenthesis, IdentifierList, Comparison]:
             return __parse_filters(preprocessing_func(token_or_list.tokens))
         elif ttype == list:
-            print(tokens)
             return " ".join(__parse_filters(t) for t in token_or_list)
         elif ttype == Identifier:
             return __column_name_with_alias(token_or_list, table_alias_map)
@@ -98,36 +216,6 @@ def where2filtermap(
             return logical_operator_mappings.get(value, value)
 
     pandas_query_elements = []
-    for t in preprocessing_func(tokens[1:]):
-        pandas_query_elements.append(__parse_filters(t))
-    return " ".join(pandas_query_elements)
-
-
-def where2pandas(
-    tokens: list[Token],
-    table_alias_map: dict[str, str] = {},
-    preprocessing_func=__filter_punctuation_tokens,
-) -> str:
-    def __parse_filters(token_or_list: Token | list) -> str:
-        ttype = type(token_or_list)
-        logical_operator_mappings: dict[str, str] = {
-            "=": "==",
-            "AND": "&",
-            "OR": "|",
-            "NOT": "not",
-            "IN": "in",
-        }
-        if ttype in [Parenthesis, Identifier, Comparison]:
-            return __parse_filters(preprocessing_func(token_or_list.tokens))
-        elif ttype == list:
-            return " ".join(__parse_filters(t) for t in token_or_list)
-        elif ttype == Identifier:
-            return __column_name_with_alias(token_or_list, table_alias_map)
-        else:
-            value = token_or_list.normalized
-            return logical_operator_mappings.get(value, value)
-
-    pandas_query_elements = []
-    for t in preprocessing_func(tokens[1:]):
+    for t in __filter_punctuation_tokens(preprocessing_func(tokens[1:])):
         pandas_query_elements.append(__parse_filters(t))
     return " ".join(pandas_query_elements)

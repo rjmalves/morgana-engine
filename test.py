@@ -15,14 +15,15 @@ from app.services.handlers import parse
 # """
 
 raw = """
-SELECT codigo, nome, capacidade_instalada, data_inicio_operacao
+SELECT id, codigo, nome, capacidade_instalada, data_inicio_operacao
 FROM usinas
-WHERE data_inicio_operacao NOT IN (1, 2, 3);
+WHERE id IN (1, 2, 3);
 """
 
 conn = conn_factory("FS")("/home/rogerio/git/dbrenovaveispy/tests/data")
 
 df = parse(raw, conn)
+
 df[0].tokens[-2].tokens[1]
 
 io = io_factory("")
