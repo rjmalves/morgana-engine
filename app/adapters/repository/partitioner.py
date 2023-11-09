@@ -4,17 +4,38 @@ from app.utils.interval import Interval
 
 class Partitioner(ABC):
     @classmethod
+    def columns(cls, schema: dict) -> list[str]:
+        raise NotImplementedError
+
+    @classmethod
     def find(cls, schema: dict, filters: dict) -> list[str]:
         raise NotImplementedError
 
 
 class NotPartitioner(Partitioner):
     @classmethod
+    def columns(cls, schema: dict) -> list[str]:
+        p_cols: list[str] = []
+        for col, props in schema["properties"].items():
+            if "partitions" not in props:
+                p_cols.append(col)
+        return p_cols
+
+    @classmethod
     def find(cls, schema: dict, filters: dict) -> list[str]:
         return [schema["data"]]
 
 
 class ListPartitioner(Partitioner):
+    @classmethod
+    def columns(cls, schema: dict) -> list[str]:
+        p_cols: list[str] = []
+        for col, props in schema["properties"].items():
+            if "partitions" in props:
+                if props["partitions"]["type"] == "list":
+                    p_cols.append(col)
+        return p_cols
+
     @classmethod
     def find(cls, schema: dict, filters: dict) -> list[str]:
         files: list[str] = []
@@ -29,6 +50,15 @@ class ListPartitioner(Partitioner):
 
 
 class RangePartitioner(Partitioner):
+    @classmethod
+    def columns(cls, schema: dict) -> list[str]:
+        p_cols: list[str] = []
+        for col, props in schema["properties"].items():
+            if "partitions" in props:
+                if props["partitions"]["type"] == "range":
+                    p_cols.append(col)
+        return p_cols
+
     @classmethod
     def find(cls, schema: dict, filters: dict) -> list[str]:
         files: list[str] = []

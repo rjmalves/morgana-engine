@@ -81,24 +81,47 @@ class SELECTParser(QueryParser):
 
         # List partitioned columns from schema
         # Check which columns are partitioned by list or range
+        list_partitioner = part_factory("list")()
+        list_partitioned_columns = list_partitioner.columns(table_conn.schema)
 
+        range_partitioner = part_factory("range")()
+        range_partitioned_columns = range_partitioner.columns(
+            table_conn.schema
+        )
         # For each list partitioned column, check if there are filters
-        # Treat the case where the filters are of equality or belonging to set (easy)
-        # Treat the case where the filters are of inequality or not belonging to set (hard)
+        for c in list_partitioned_columns:
+            pass
+            # List all possible values
+            # Treat equality filters
+            # Treat belonging to set filters
+            # Treat inequality filters
+            # Treat not belonging to set filters
 
         # For each range partitioned column, check if there are filters
-        # Treat the case where the filters are of equality or belonging to set (easy)
-        # Treat the case where the filters are of inequality or not belonging to set (hard)
+        for c in range_partitioned_columns:
+            pass
+            # Evaluate data range
+            # Treat equality filters - make degenerated interval
+            # Treat belonging to set filters - list of degenerated intervals
+            # Treat inequality filters
+            # Treat not belonging to set filters - hard case
 
         # The main result is the list of filenames that must be read
         # and concatenated.
 
-        df = table_io.read(
-            join(table_conn.uri, table_conn.schema["data"]),
-            columns=columns,
-            storage_options=table_conn.options,
-        )
-        print(filters)
+        if len(list_partitioned_columns) + len(range_partitioned_columns) == 0:
+            files_to_read = table_conn.schema["files"]
+        else:
+            files_to_read = []
+        dfs: list[pd.DataFrame] = [
+            table_io.read(
+                join(table_conn.uri, f),
+                columns=columns,
+                storage_options=table_conn.options,
+            )
+            for f in files_to_read
+        ]
+        df = pd.concat(dfs, ignore_index=True)
         # df = enforce_column_types(df, table_conn.schema)
         # TODO - concatenate all files that must be read
         # Rename due columns
