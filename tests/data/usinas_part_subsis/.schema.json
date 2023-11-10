@@ -1,5 +1,5 @@
 {
-    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/usinas/.schema.json",
+    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/usinas_part_subsis/.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "format": "PARQUET",
@@ -28,12 +28,13 @@
         "data_inicio_simulacao": {
             "type": "datetime"
         },
-        "subsistema_geografico": {
-            "type": "string"
-        },
         "subsistema_eletrico": {
             "type": "string"
         }
     },
-    "partition_keys": {}
+    "partition_keys": {
+        "subsistema_geografico": {
+            "type": "string"
+        }
+    }
 }

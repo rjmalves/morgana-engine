@@ -2,12 +2,15 @@
     "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "properties": {
+    "tables": {
         "usinas": {
             "$ref": "usinas"
         },
-        "usinas_part": {
-            "$ref": "usinas_part"
+        "usinas_part_subsis": {
+            "$ref": "usinas_part_subsis"
+        },
+        "usinas_part_id": {
+            "$ref": "usinas_part_id"
         }
     }
 }

@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import override
 import json
+from os import listdir
 from os.path import join
 from app.utils.types import enforce_property_types
+from app.utils.sql import partitioned_file_name, partition_value_in_file
 
 
 class Connection(ABC):
@@ -25,9 +27,16 @@ class Connection(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def access(self, table: str) -> "Connection":
+    def list_files(self) -> list[str]:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_partition_files(self, column: str) -> list[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def access(self, table: str) -> "Connection":
+        raise NotImplementedError
 
 
 class FSConnection(Connection):
@@ -51,18 +60,29 @@ class FSConnection(Connection):
         if self._schema is None:
             with open(join(self.uri, ".schema.json"), "r") as file:
                 self._schema = json.load(file)
-                enforce_property_types(self._schema)
+                # TODO - validate schema
+                # enforce_property_types(self._schema)
         return self._schema
 
     @override
+    def list_files(self) -> list[str]:
+        return listdir(self.uri)
+
+    @override
+    def list_partition_files(self, column: str) -> list[str]:
+        files = self.list_files()
+        # TODO - replace simple comparison by regex
+        files_with_column = [f for f in files if f"-{column}" in f]
+        return files_with_column
+
+    @override
     def access(self, table: str) -> "Connection":
-        tables = self.schema["properties"]
+        tables = self.schema["tables"]
         if table in tables:
             return FSConnection(join(self.uri, tables[table]["$ref"]))
         else:
             # TODO - add error handling
             return self
-
 
 
 class SQLConnection(Connection):

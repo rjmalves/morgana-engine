@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Callable
 import pandas as pd
 
+
 def __cast_if_valid(value: str | None, format: str):
     __casting_functions: dict[str, Callable] = {
         "date": lambda value: date.fromisoformat(value),
@@ -26,6 +27,7 @@ def enforce_column_types(df: pd.DataFrame, schema: dict) -> pd.DataFrame:
 
     return df
 
+
 def enforce_property_types(schema: dict):
     for prop, attrs in schema["properties"].items():
         if "type" not in attrs:
@@ -39,3 +41,15 @@ def enforce_property_types(schema: dict):
                         partition_mappings[filename] = [
                             __cast_if_valid(v, attrs["format"]) for v in values
                         ]
+
+
+def casting_functions(schema_type: str) -> Callable:
+    type_mappings: dict[str, Callable] = {
+        "integer": int,
+        "number": float,
+        "string": str,
+        "bool": bool,
+        "date": datetime.fromisoformat,
+        "datetime": datetime.fromisoformat,
+    }
+    return type_mappings.get(schema_type, lambda x: x)

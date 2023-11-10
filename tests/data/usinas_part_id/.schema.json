@@ -1,12 +1,9 @@
 {
-    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/usinas/.schema.json",
+    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/usinas_part_id/.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "format": "PARQUET",
     "columns": {
-        "id": {
-            "type": "integer"
-        },
         "codigo": {
             "type": "string"
         },
@@ -35,5 +32,9 @@
             "type": "string"
         }
     },
-    "partition_keys": {}
+    "partition_keys": {
+        "id": {
+            "type": "integer"
+        }
+    }
 }

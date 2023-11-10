@@ -6,7 +6,11 @@ from sqlparse.sql import (
     Parenthesis,
     Comparison,
 )
+from app.models.readingfilter import type_factory
+from typing import TypeVar
 from sqlparse.tokens import Newline, Whitespace, Punctuation
+
+T = TypeVar("T")
 
 
 def __filter_punctuation_tokens(tokens: list[Token]) -> list[Token]:
@@ -25,15 +29,17 @@ def query2tokens(query: str) -> list[Token]:
 
 
 def identifierlist2dict(
-    identifier_list: IdentifierList,
-) -> dict[str, list[str]]:
+    identifier_list: IdentifierList, table_alias_map: dict[str, str]
+) -> dict[str, dict[str, str]]:
     tokens: list[Identifier] = [
         t for t in identifier_list.tokens if type(t) == Identifier
     ]
     parents: list[str] = list(set([t.get_parent_name() for t in tokens]))
-    identifier_dict: dict[str, list[str]] = {a: [] for a in parents}
+    identifier_dict: dict[str, list[str]] = {a: {} for a in parents}
     for t in tokens:
-        identifier_dict[t.get_parent_name()].append(t.get_real_name())
+        identifier_dict[t.get_parent_name()][
+            t.get_real_name()
+        ] = __column_name_with_alias(t, table_alias_map)
     return identifier_dict
 
 
@@ -49,8 +55,11 @@ def aliases2dict(
 def __column_name_with_alias(
     token: Identifier, table_alias_map: dict[str, str]
 ) -> str:
+    alias = token.get_alias()
     parent = token.get_parent_name()
-    if parent:
+    if alias:
+        return alias
+    elif parent:
         return f"{table_alias_map.get(parent, parent)}_{token.get_real_name()}"
     else:
         return token.get_real_name()
@@ -79,7 +88,6 @@ def join_comparison_mapping(
 
 def where2filtermap(
     tokens: list[Token],
-    table_alias_map: dict[str, str] = {},
     preprocessing_func=__filter_space_tokens,
 ) -> list[tuple[str, list[Token]]]:
     def __split_list_and_or(token_list: list[Token]) -> list[list[Token]]:
@@ -117,23 +125,13 @@ def where2filtermap(
             identifiers = [
                 t for t in comparison_tokens if type(t) == Identifier
             ]
-            not_identifiers = [
-                t for t in comparison_tokens if type(t) != Identifier
-            ]
-            num_identifiers = len(identifiers)
-            ttypes = [t.ttype for t in not_identifiers if t.ttype is not None]
-            num_comparison = len([t for t in ttypes if "Comparison" in str(t)])
-            num_constants = len(
-                [t for t in ttypes if "Token.Literal" in str(t)]
-            )
-            if all(
-                [
-                    n == 1
-                    for n in [num_identifiers, num_comparison, num_constants]
-                ]
-            ):
+            filter_type = type_factory(comparison_tokens)
+            if filter_type:
                 filtermaps.append(
-                    (identifiers[0].get_parent_name(), comparison_tokens)
+                    (
+                        identifiers[0].get_parent_name(),
+                        filter_type(comparison_tokens),
+                    )
                 )
         elif ttype == list:
             comparison_tokens = preprocessing_func(token_or_list)
@@ -147,28 +145,13 @@ def where2filtermap(
                 identifiers = [
                     t for t in comparison_tokens if type(t) == Identifier
                 ]
-                not_identifiers = [
-                    t for t in comparison_tokens if type(t) != Identifier
-                ]
-                num_identifiers = len(identifiers)
-                num_in_keywords = len(
-                    [t for t in comparison_tokens if t.normalized == "IN"]
-                )
-                num_parenthesis = len(
-                    [t for t in comparison_tokens if type(t) == Parenthesis]
-                )
-                if all(
-                    [
-                        n == 1
-                        for n in [
-                            num_identifiers,
-                            num_in_keywords,
-                            num_parenthesis,
-                        ]
-                    ]
-                ):
+                filter_type = type_factory(comparison_tokens)
+                if filter_type:
                     filtermaps.append(
-                        (identifiers[0].get_parent_name(), comparison_tokens)
+                        (
+                            identifiers[0].get_parent_name(),
+                            filter_type(comparison_tokens),
+                        )
                     )
 
     splitted_tokens = __split_list_and_or(
@@ -184,11 +167,6 @@ def where2filtermap(
         else:
             filtermaps.append(t_map)
     return filtermaps
-    renamed_filtermaps: list[dict[str, list[Token]]] = []
-    for filtermap in filtermaps:
-        for k, v in filtermap.items():
-            renamed_filtermaps.append((table_alias_map[k], v))
-    return renamed_filtermaps
 
 
 def where2pandas(
@@ -219,3 +197,24 @@ def where2pandas(
     for t in __filter_punctuation_tokens(preprocessing_func(tokens[1:])):
         pandas_query_elements.append(__parse_filters(t))
     return " ".join(pandas_query_elements)
+
+
+def partitioned_file_name(table_name: str, partitions: dict[str, str]) -> str:
+    ordered_keys = sorted(list(partitions.keys()))
+    filename = f"{table_name}"
+    for k in ordered_keys:
+        filename += f"-{k}={ordered_keys[k]}"
+    return filename + "-"
+
+
+def partitions_in_file(filename: str) -> dict[str, str]:
+    parts = filename.split("-")[1:-1]
+    partition_values: dict[str, str] = {}
+    for p in parts:
+        part_key_value = p.split("=")
+        partition_values[part_key_value[0]] = part_key_value[1]
+    return partition_values
+
+
+def partition_value_in_file(filename: str, column: str) -> str | None:
+    return partitions_in_file(filename).get(column)
