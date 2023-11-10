@@ -3,3 +3,6 @@ jsonschema
 pandas
 pandas-stubs
 python-dotenv
+mypy
+pylama
+pytest

@@ -1,15 +1,28 @@
 from app.adapters.repository.connection import Connection
-from app.adapters.repository.dataio import DataIO, ParquetIO
-from app.adapters.repository.queryparser import factory as query_factory
+from app.adapters.repository.processing import factory
 from app.utils.sql import query2tokens
 import pandas as pd
 
 
-def parse(
+def process_query(
     query: str,
     conn: Connection,
 ) -> pd.DataFrame | dict | None:
+    """
+    Process a SQL query and return the result.
+
+    Args:
+        query (str): The SQL query to be processed.
+        conn (Connection): The database connection object.
+
+    Returns:
+        Union[pd.DataFrame, dict, None]: The result of the query.
+    """
+    # TODO - validate query:
+    # - 1 statement only
+    # - among the supported keywords
+    # ...
     tokens = query2tokens(query)
-    parser = query_factory(tokens[0].normalized)
-    r = parser.parse(tokens, conn)
+    processer = factory(tokens[0].normalized)
+    r = processer.process(tokens, conn)
     return r

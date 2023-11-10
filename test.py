@@ -1,8 +1,6 @@
 from app.adapters.repository.connection import factory as conn_factory
-from app.adapters.repository.dataio import factory as io_factory
-from app.adapters.repository.partitioner import factory as part_factory
 from datetime import date
-from app.services.handlers import parse
+from app.services.handlers import process_query
 
 
 conn = conn_factory("FS")("/home/rogerio/git/dbrenovaveispy/tests/data")
@@ -21,6 +19,6 @@ WHERE id in (1,);
 # WHERE id = 1;
 # """
 
-df = parse(raw, conn)
+df = process_query(raw, conn)
 
 df

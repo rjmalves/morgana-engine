@@ -1,16 +1,19 @@
 {
-    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "tables": {
-        "usinas": {
-            "$ref": "usinas"
+    "uri": "./data/.schema.json",
+    "name": "data",
+    "schema_type": "database",
+    "tables": [
+        {
+            "name": "usinas",
+            "ref": "usinas"
         },
-        "usinas_part_subsis": {
-            "$ref": "usinas_part_subsis"
+        {
+            "name": "usinas_part_subsis",
+            "ref": "usinas_part_subsis"
         },
-        "usinas_part_id": {
-            "$ref": "usinas_part_id"
+        {
+            "name": "usinas_part_id",
+            "ref": "usinas_part_id"
         }
-    }
+    ]
 }

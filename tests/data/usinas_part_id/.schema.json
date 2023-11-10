@@ -1,40 +1,50 @@
 {
-    "$id": "file://home/rogerio/git/dbrenovaveispy/tests/data/usinas_part_id/.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
+    "uri": "./data/usinas_part_id/.schema.json",
+    "name": "usinas_part_id",
+    "schema_type": "table",
     "format": "PARQUET",
-    "columns": {
-        "codigo": {
+    "columns": [
+        {
+            "name": "codigo",
             "type": "string"
         },
-        "nome": {
+        {
+            "name": "nome",
             "type": "string"
         },
-        "capacidade_instalada": {
+        {
+            "name": "capacidade_instalada",
             "type": "number"
         },
-        "latitude": {
+        {
+            "name": "latitude",
             "type": "number"
         },
-        "longitude": {
+        {
+            "name": "longitude",
             "type": "number"
         },
-        "data_inicio_operacao": {
+        {
+            "name": "data_inicio_operacao",
             "type": "datetime"
         },
-        "data_inicio_simulacao": {
+        {
+            "name": "data_inicio_simulacao",
             "type": "datetime"
         },
-        "subsistema_geografico": {
+        {
+            "name": "subsistema_geografico",
             "type": "string"
         },
-        "subsistema_eletrico": {
+        {
+            "name": "subsistema_eletrico",
             "type": "string"
         }
-    },
-    "partition_keys": {
-        "id": {
+    ],
+    "partition_keys": [
+        {
+            "name": "id",
             "type": "integer"
         }
-    }
+    ]
 }

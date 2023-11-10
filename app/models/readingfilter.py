@@ -1,21 +1,30 @@
 from abc import ABC
-from sqlparse.sql import Token
-from sqlparse.sql import (
-    Identifier,
-    Parenthesis,
-)
-from typing import TypeVar, Callable, override
-from sqlparse.tokens import Newline, Whitespace, Punctuation
+from typing import TypeVar, Callable
+from sqlparse.sql import Token, Identifier, Parenthesis  # type: ignore
+from app.utils.sql import filter_spacing_and_punctuation_tokens
 
 T = TypeVar("T")
 
 
-def _filter_space_and_punctuation_tokens(tokens: list[Token]) -> list[Token]:
-    __ETC_TOKENS = [Newline, Whitespace, Punctuation]
-    return [t for t in tokens if t.ttype not in __ETC_TOKENS]
-
-
 class ReadingFilter(ABC):
+    """
+    Class that defines a filter that is applied when reading
+    partitioned files in a database. The filter aims to reduce the
+    number of files that are processed by the database engine,
+    reducing the query time.
+
+    Attributes:
+    -----------
+    tokens : list[Token]
+        A list of tokens that represent the filter expression.
+    _column : str | None
+        The name of the column that the filter is applied to.
+    _operators : list[str] | None
+        A list of operators used in the filter expression.
+    _values : list[str] | None
+        A list of values used in the filter expression.
+    """
+
     def __init__(self, tokens: list[Token]) -> None:
         super().__init__()
         self.tokens = tokens
@@ -25,30 +34,86 @@ class ReadingFilter(ABC):
 
     @property
     def column(self) -> str:
+        """
+        Returns the name of the column that the filter is applied to.
+
+        Returns:
+        --------
+        str
+            The name of the column.
+        """
         if self._column is None:
-            self._column = [t for t in self.tokens if type(t) == Identifier][
+            self._column = [t for t in self.tokens if type(t) is Identifier][
                 0
             ].get_real_name()
         return self._column
 
     @property
     def operators(self) -> list[str]:
+        """
+        Returns a list of operators used in the filter expression.
+
+        Returns:
+        --------
+        list[str]
+            A list of operators.
+        """
         raise NotImplementedError
 
     @property
     def values(self) -> list[str]:
+        """
+        Returns a list of values used in the filter expression.
+
+        Returns:
+        --------
+        list[str]
+            A list of values.
+        """
         raise NotImplementedError
 
     @classmethod
     def is_filter(cls, tokens: list[Token]) -> bool:
+        """
+        Determines whether the given list of tokens represents a filter.
+
+        Parameters:
+        -----------
+        tokens : list[Token]
+            A list of tokens.
+
+        Returns:
+        --------
+        bool
+            True if the list of tokens represents a filter, False otherwise.
+        """
         raise NotImplementedError
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
+        """
+        Applies the filter to the given list of values.
+
+        Parameters:
+        -----------
+        values : list[T]
+            A list of values to be filtered.
+        casting_func : Callable
+            A function used to cast the values to the appropriate type.
+
+        Returns:
+        --------
+        list[T]
+            A list of filtered values.
+        """
         raise NotImplementedError
 
 
 class EqualityReadingFilter(ReadingFilter):
-    @override
+    """
+    Filter that covers the case where a column is compared to a constant
+    with a equality operator.
+    """
+
     @property
     def operators(self) -> list[str]:
         if self._operators is None:
@@ -59,7 +124,6 @@ class EqualityReadingFilter(ReadingFilter):
             ]
         return self._operators
 
-    @override
     @property
     def values(self) -> list[str]:
         if self._values is None:
@@ -72,8 +136,8 @@ class EqualityReadingFilter(ReadingFilter):
 
     @classmethod
     def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) == Identifier]
-        not_identifiers = [t for t in tokens if type(t) != Identifier]
+        identifiers = [t for t in tokens if type(t) is Identifier]
+        not_identifiers = [t for t in tokens if type(t) is not Identifier]
         num_identifiers = len(identifiers)
         ttypes = [t.ttype for t in not_identifiers if t.ttype is not None]
         comparisons = [t for t in ttypes if "Comparison" in str(t)]
@@ -95,6 +159,11 @@ class EqualityReadingFilter(ReadingFilter):
 
 
 class UnequalityReadingFilter(ReadingFilter):
+    """
+    Filter that covers the case where a column is compared to a constant
+    with the difference operator.
+    """
+
     def __revert_operator(self, operator: str) -> str:
         operator_map: dict[str, str] = {
             ">": "<=",
@@ -104,7 +173,6 @@ class UnequalityReadingFilter(ReadingFilter):
         }
         return operator_map[operator]
 
-    @override
     @property
     def operators(self) -> list[str]:
         if self._operators is None:
@@ -113,12 +181,11 @@ class UnequalityReadingFilter(ReadingFilter):
                     0
                 ].value
             ]
-            identifier_first = type(self.tokens[0]) == Identifier
+            identifier_first = type(self.tokens[0]) is Identifier
             if not identifier_first:
                 self._operators = [self.__revert_operator(self.operators[0])]
         return self._operators
 
-    @override
     @property
     def values(self) -> list[str]:
         if self._values is None:
@@ -131,8 +198,8 @@ class UnequalityReadingFilter(ReadingFilter):
 
     @classmethod
     def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) == Identifier]
-        not_identifiers = [t for t in tokens if type(t) != Identifier]
+        identifiers = [t for t in tokens if type(t) is Identifier]
+        not_identifiers = [t for t in tokens if type(t) is not Identifier]
         num_identifiers = len(identifiers)
         ttypes = [t.ttype for t in not_identifiers if t.ttype is not None]
         comparisons = [t for t in ttypes if "Comparison" in str(t)]
@@ -146,7 +213,7 @@ class UnequalityReadingFilter(ReadingFilter):
         return False
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
-        casted_values = self._values = [casting_func(v) for v in self.values]
+        casted_values = [casting_func(v) for v in self.values]
         if self.operators[0] == ">":
             return [v for v in values if v > casted_values[0]]
         elif self.operators[0] == "<":
@@ -155,35 +222,34 @@ class UnequalityReadingFilter(ReadingFilter):
             return [v for v in values if v >= casted_values[0]]
         elif self.operators[0] == "<=":
             return [v for v in values if v <= casted_values[0]]
+        return []
 
 
 class InSetReadingFilter(ReadingFilter):
-    @override
     @property
     def operators(self) -> list[str]:
         if self._operators is None:
             self._operators = [
-                t for t in self.tokens if type(t) == Identifier
+                t for t in self.tokens if type(t) is Identifier
             ][0].get_real_name()
         return self._operators
 
-    @override
     @property
     def values(self) -> list[str]:
         if self._values is None:
-            collection = _filter_space_and_punctuation_tokens(
-                [t for t in self.tokens if type(t) == Parenthesis][0].tokens
+            collection = filter_spacing_and_punctuation_tokens(
+                [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
         return self._values
 
     @classmethod
     def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) == Identifier]
+        identifiers = [t for t in tokens if type(t) is Identifier]
         num_identifiers = len(identifiers)
         num_in_keywords = len([t for t in tokens if t.normalized == "IN"])
         num_not_keywords = len([t for t in tokens if t.normalized == "NOT"])
-        num_parenthesis = len([t for t in tokens if type(t) == Parenthesis])
+        num_parenthesis = len([t for t in tokens if type(t) is Parenthesis])
         return all(
             [
                 n == 1
@@ -202,32 +268,30 @@ class InSetReadingFilter(ReadingFilter):
 
 
 class NotInSetReadingFilter(ReadingFilter):
-    @override
     @property
     def operators(self) -> list[str]:
         if self._operators is None:
             self._operators = [
-                t for t in self.tokens if type(t) == Identifier
+                t for t in self.tokens if type(t) is Identifier
             ][0].get_real_name()
         return self._operators
 
-    @override
     @property
     def values(self) -> list[str]:
         if self._values is None:
-            collection = _filter_space_and_punctuation_tokens(
-                [t for t in self.tokens if type(t) == Parenthesis][0].tokens
+            collection = filter_spacing_and_punctuation_tokens(
+                [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
         return self._values
 
     @classmethod
     def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) == Identifier]
+        identifiers = [t for t in tokens if type(t) is Identifier]
         num_identifiers = len(identifiers)
         num_in_keywords = len([t for t in tokens if t.normalized == "IN"])
         num_not_keywords = len([t for t in tokens if t.normalized == "NOT"])
-        num_parenthesis = len([t for t in tokens if type(t) == Parenthesis])
+        num_parenthesis = len([t for t in tokens if type(t) is Parenthesis])
         return all(
             [
                 n == 1
