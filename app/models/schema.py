@@ -61,24 +61,24 @@ class Schema:
         return self._json_dict["schema_type"] == "table"
 
     @property
-    def tables(self) -> dict[str, str] | None:
+    def tables(self) -> dict[str, str]:
         if self.is_database:
             return {t["name"]: t["ref"] for t in self._json_dict["tables"]}
         else:
-            return None
+            return {}
 
     @property
-    def columns(self) -> dict[str, str] | None:
+    def columns(self) -> dict[str, str]:
         if self.is_table:
             return {c["name"]: c["type"] for c in self._json_dict["columns"]}
         else:
-            return None
+            return {}
 
     @property
-    def partition_keys(self) -> dict[str, str] | None:
+    def partition_keys(self) -> dict[str, str]:
         if self.is_table:
             return {
                 k["name"]: k["type"] for k in self._json_dict["partition_keys"]
             }
         else:
-            return None
+            return {}

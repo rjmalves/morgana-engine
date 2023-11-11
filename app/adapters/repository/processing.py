@@ -140,7 +140,7 @@ class SELECT(Processing):
     @classmethod
     def __process_join_mappings(
         cls, tokens: list[Token], tables_to_select: dict[str, str]
-    ) -> dict[str, dict[str, str]]:
+    ) -> list[tuple[str, str]]:
         """
         Processes the tokens associated with the join mappings in order
         to obtain a map of each join type with the tables that must be joined.
@@ -154,11 +154,9 @@ class SELECT(Processing):
                 if type(t) is Identifier
             ]
             mappings.append(
-                tuple(
-                    [
-                        column_name_with_alias(i, tables_to_select)
-                        for i in identifiers
-                    ]
+                (
+                    column_name_with_alias(identifiers[0], tables_to_select),
+                    column_name_with_alias(identifiers[1], tables_to_select),
                 )
             )
         return mappings
@@ -166,7 +164,7 @@ class SELECT(Processing):
     @classmethod
     def __process_filters_for_reading(
         cls, tokens: list[Token]
-    ) -> list[dict[str, ReadingFilter]]:
+    ) -> list[tuple[str, ReadingFilter]]:
         """
         Filters the tokens after the WHERE that might help deciding which
         partition files must be read, optimizing reading time.
@@ -180,16 +178,15 @@ class SELECT(Processing):
 
         """
 
-        def extracts_reading_filters(token_or_list: Token | list):
+        def extracts_reading_filters(token_or_list: Token | list[Token]):
             """ """
-            ttype = type(token_or_list)
-            if ttype == Parenthesis:
+            if type(token_or_list) is Parenthesis:
                 splitted_list = split_token_list_in_and_or_keywords(
                     filter_spacing_tokens(token_or_list.tokens)
                 )
                 for token_list in splitted_list:
                     extracts_reading_filters(token_list)
-            elif ttype == Comparison:
+            elif type(token_or_list) is Comparison:
                 # First case of interest:
                 # Equality and Unequality
                 comparison_tokens = filter_spacing_tokens(token_or_list.tokens)
@@ -204,7 +201,7 @@ class SELECT(Processing):
                             filter_type(comparison_tokens),
                         )
                     )
-            elif ttype == list:
+            elif type(token_or_list) is list:
                 # First case of interest:
                 # Belonging and Not Belonging to Set
                 comparison_tokens = filter_spacing_tokens(token_or_list)
@@ -228,7 +225,7 @@ class SELECT(Processing):
             splitted_tokens = split_token_list_in_and_or_keywords(
                 filter_spacing_and_punctuation_tokens(tokens[1:])
             )
-        filtermaps: list[dict[str, list[Token]]] = []
+        filtermaps: list[tuple[str, ReadingFilter]] = []
         for token_set in splitted_tokens:
             t_map = extracts_reading_filters(token_set)
             if not t_map:
@@ -245,9 +242,8 @@ class SELECT(Processing):
         cls, tokens: list[Token], tables_to_select: dict[str, str]
     ):
         def process_filters_to_pandas_query(
-            token_or_list: Token | list,
+            token_or_list: Token | list[Token],
         ) -> str:
-            ttype = type(token_or_list)
             logical_operator_mappings: dict[str, str] = {
                 "=": "==",
                 "AND": "&",
@@ -255,18 +251,22 @@ class SELECT(Processing):
                 "NOT": "not",
                 "IN": "in",
             }
-            if ttype in [Parenthesis, IdentifierList, Comparison]:
+            if type(token_or_list) in [
+                Parenthesis,
+                IdentifierList,
+                Comparison,
+            ]:
                 return process_filters_to_pandas_query(
                     filter_spacing_tokens(token_or_list.tokens)
                 )
-            elif ttype == list:
+            elif type(token_or_list) is list:
                 return " ".join(
                     process_filters_to_pandas_query(t) for t in token_or_list
                 )
-            elif ttype == Identifier:
+            elif type(token_or_list) is Identifier:
                 return column_name_with_alias(token_or_list, tables_to_select)
             else:
-                value = token_or_list.normalized
+                value = str(token_or_list.normalized)
                 return logical_operator_mappings.get(value, value)
 
         filters = [t for t in tokens if type(t) is Where]
@@ -289,28 +289,33 @@ class SELECT(Processing):
         conn: Connection,
     ):
         table_conn = conn.access(table)
-        table_io = io_factory(table_conn.schema.format)
+        if not table_conn.schema.is_table:
+            raise ValueError(f"Schema {table} is not a table")
+        table_format = str(table_conn.schema.format)
+        table_io = io_factory(table_format)
 
         # List partitioned columns from schema
         partition_columns: dict[str, str] = table_conn.schema.partition_keys
 
         # The main result is the list of filenames that must be read
         # and concatenated.
+        files_to_read: list[str] = []
         if len(partition_columns) == 0:
-            files_to_read: list[str] = [table]
+            files_to_read.append(table)
         else:
-            files_to_read: list[str] = []
             for c, c_type in partition_columns.items():
                 partition_files = table_conn.list_partition_files(c)
                 casting_func = casting_functions(c_type)
                 # Builds a value: [files] map
                 partition_maps: dict[Any, list[str]] = {}
-                for f in partition_files:
-                    v = casting_func(partition_value_in_file(f, c))
+                for partition_file in partition_files:
+                    v = casting_func(
+                        partition_value_in_file(partition_file, c)
+                    )
                     if v in partition_maps:
-                        partition_maps[v].append(f)
+                        partition_maps[v].append(partition_file)
                     else:
-                        partition_maps[v] = [f]
+                        partition_maps[v] = [partition_file]
                 # List all possible values
                 partition_values = [
                     casting_func(v) for v in list(partition_maps.keys())
@@ -321,8 +326,8 @@ class SELECT(Processing):
                     filtered_values = partition_values
                 else:
                     filtered_values = []
-                    for f in column_filters:
-                        filtered_values += f.apply(
+                    for reading_filter in column_filters:
+                        filtered_values += reading_filter.apply(
                             partition_values, casting_func
                         )
                     filtered_values = list(set(filtered_values))
@@ -383,14 +388,14 @@ class SELECT(Processing):
         cls,
         dfs: dict[str, pd.DataFrame],
         tables_to_select: dict[str, str],
-        table_join_mappings: dict[str, dict[str, str]],
+        table_join_mappings: list[tuple[str, str]],
     ) -> pd.DataFrame:
         """
         Processes the JOIN keywords in the query, joining the tables in the order
         they appear in the statement.
         """
         if len(table_join_mappings) > 0:
-            return None
+            return pd.DataFrame()
         else:
             return dfs[list(tables_to_select.keys())[0]]
 
