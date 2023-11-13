@@ -31,6 +31,11 @@ class Schema:
         super().__init__()
         self._json_dict = json_dict
 
+    def __eq__(self, __value: object) -> bool:
+        if not isinstance(__value, Schema):
+            return False
+        return __value._json_dict == self._json_dict
+
     def validate(self) -> bool:
         # TODO - implement validation (try to use jsonschema)
         # - check for required fields for every schema

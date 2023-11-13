@@ -101,9 +101,7 @@ class SELECT(Processing):
     """
 
     @classmethod
-    def __process_tables_identifiers(
-        cls, tokens: list[Token]
-    ) -> dict[str, str]:
+    def _process_table_identifiers(cls, tokens: list[Token]) -> dict[str, str]:
         """
         Processes the tokens associated with the tables identifiers in
         order to obtain a map of alias: table_name.
@@ -116,7 +114,7 @@ class SELECT(Processing):
         return alias_map
 
     @classmethod
-    def __process_column_identifiers(
+    def _process_column_identifiers(
         cls, tokens: list[Token], tables_to_select: dict[str, str]
     ) -> dict[str, dict[str, str]]:
         """
@@ -138,7 +136,7 @@ class SELECT(Processing):
         return identifier_dict
 
     @classmethod
-    def __process_join_mappings(
+    def _process_join_mappings(
         cls, tokens: list[Token], tables_to_select: dict[str, str]
     ) -> list[tuple[str, str]]:
         """
@@ -162,7 +160,7 @@ class SELECT(Processing):
         return mappings
 
     @classmethod
-    def __process_filters_for_reading(
+    def _process_filters_for_reading(
         cls, tokens: list[Token]
     ) -> list[tuple[str, ReadingFilter]]:
         """
@@ -238,7 +236,7 @@ class SELECT(Processing):
             return []
 
     @classmethod
-    def __process_filters_for_querying(
+    def _process_filters_for_querying(
         cls, tokens: list[Token], tables_to_select: dict[str, str]
     ):
         def process_filters_to_pandas_query(
@@ -251,11 +249,11 @@ class SELECT(Processing):
                 "NOT": "not",
                 "IN": "in",
             }
-            if type(token_or_list) in [
-                Parenthesis,
-                IdentifierList,
-                Comparison,
-            ]:
+            if (
+                (type(token_or_list) is Parenthesis)
+                or (type(token_or_list) is IdentifierList)
+                or (type(token_or_list) is Comparison)
+            ):
                 return process_filters_to_pandas_query(
                     filter_spacing_tokens(token_or_list.tokens)
                 )
@@ -265,9 +263,14 @@ class SELECT(Processing):
                 )
             elif type(token_or_list) is Identifier:
                 return column_name_with_alias(token_or_list, tables_to_select)
-            else:
+            elif type(token_or_list) is Token:
                 value = str(token_or_list.normalized)
                 return logical_operator_mappings.get(value, value)
+            else:
+                raise ValueError(
+                    f"Unknown token type {type(token_or_list)} in "
+                    f"process_filters_to_pandas_query"
+                )
 
         filters = [t for t in tokens if type(t) is Where]
         if len(filters) > 0:
@@ -281,7 +284,7 @@ class SELECT(Processing):
             return None
 
     @classmethod
-    def __process_select_from_table(
+    def _process_select_from_table(
         cls,
         table: str,
         filters: list[ReadingFilter],
@@ -384,7 +387,7 @@ class SELECT(Processing):
         return dfs
 
     @classmethod
-    def __process_join_tables(
+    def _process_join_tables(
         cls,
         dfs: dict[str, pd.DataFrame],
         tables_to_select: dict[str, str],
@@ -403,21 +406,21 @@ class SELECT(Processing):
     def process(
         cls, tokens: list[Token], conn: Connection
     ) -> pd.DataFrame | dict | None:
-        tables_to_select = cls.__process_tables_identifiers(tokens)
-        columns_in_each_table = cls.__process_column_identifiers(
+        tables_to_select = cls._process_table_identifiers(tokens)
+        columns_in_each_table = cls._process_column_identifiers(
             tokens, tables_to_select
         )
-        table_join_mappings = cls.__process_join_mappings(
+        table_join_mappings = cls._process_join_mappings(
             tokens, tables_to_select
         )
-        reading_filters = cls.__process_filters_for_reading(tokens)
-        querying_filters = cls.__process_filters_for_querying(
+        reading_filters = cls._process_filters_for_reading(tokens)
+        querying_filters = cls._process_filters_for_querying(
             tokens, tables_to_select
         )
-        dfs = cls.__process_select(
+        dfs = cls._process_select(
             tables_to_select, reading_filters, columns_in_each_table, conn
         )
-        df = cls.__process_join_tables(
+        df = cls._process_join_tables(
             dfs, tables_to_select, table_join_mappings
         )
         if querying_filters is not None:

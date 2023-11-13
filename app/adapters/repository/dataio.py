@@ -7,7 +7,7 @@ class DataIO(ABC):
     Abstract base class for reading and writing data files as pandas DataFrames.
     """
 
-    EXTENSION = ""
+    EXTENSION = ".data"
 
     @classmethod
     def filter_data_files(cls, files: list[str], *args, **kwargs) -> list[str]:
@@ -41,8 +41,9 @@ class ParquetIO(DataIO):
 
     @classmethod
     def write(cls, df: pd.DataFrame, path: str, *args, **kwargs):
-        # TODO - how to properly overload this method?
-        df.to_parquet(path, *args, compression="gzip", **kwargs)
+        if "compression" not in kwargs:
+            kwargs["compression"] = "gzip"
+        df.to_parquet(path, *args, **kwargs)
 
 
 class CSVIO(DataIO):
@@ -54,8 +55,9 @@ class CSVIO(DataIO):
 
     @classmethod
     def write(cls, df: pd.DataFrame, path: str, *args, **kwargs):
-        # TODO - how to properly overload this method?
-        df.to_csv(path, *args, index=False, **kwargs)
+        if "index" not in kwargs:
+            kwargs["index"] = False
+        df.to_csv(path, *args, **kwargs)
 
 
 MAPPING: dict[str, type[DataIO]] = {
