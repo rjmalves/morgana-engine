@@ -3,22 +3,32 @@ from datetime import date
 from app.services.handlers import process_query
 
 
-conn = conn_factory("FS")("/home/rogerio/git/dbrenovaveispy/tests/data")
+conn = conn_factory("FS")("/home/rogerio/ONS/dados_weol/gfs")
 
 raw = """
-SELECT id, codigo AS cod, nome
-FROM usinas_part_id
-WHERE id in (1,);
+SELECT data_rodada, data_previsao, dia_previsao, valor, quadricula
+FROM velocidade_vento_100m
+WHERE quadricula IN (1,);
 """
 
+
+def main():
+    return process_query(raw, conn)
+
+
 # raw = """
-# SELECT v.id_usina, v.id_modelo, v.datahora, v.valor AS verificado, p.valor AS previsto
-# FROM verificados v
-# INNER JOIN previstos p
-# ON v.datahora = p.datahora
-# WHERE id = 1;
+# SELECT id, lat, lon FROM quadriculas;
 # """
+# df = process_query(raw, conn)
+# print(df)
 
-df = process_query(raw, conn)
+import tracemalloc
 
-df
+tracemalloc.start()
+
+df = main()
+print(df)
+
+print(tracemalloc.get_traced_memory())
+
+tracemalloc.stop()

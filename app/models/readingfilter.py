@@ -17,11 +17,11 @@ class ReadingFilter(ABC):
     -----------
     tokens : list[Token]
         A list of tokens that represent the filter expression.
-    _column : str | None
+    column : str | None
         The name of the column that the filter is applied to.
-    _operators : list[str] | None
+    operators : list[str] | None
         A list of operators used in the filter expression.
-    _values : list[str] | None
+    values : list[str] | None
         A list of values used in the filter expression.
     """
 
@@ -31,6 +31,18 @@ class ReadingFilter(ABC):
         self._column: str | None = None
         self._operators: list[str] | None = None
         self._values: list[str] | None = None
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, self.__class__):
+            return False
+        else:
+            return all(
+                [
+                    self.column == o.column,
+                    self.operators == o.operators,
+                    self.values == o.values,
+                ]
+            )
 
     @property
     def column(self) -> str:
@@ -139,10 +151,13 @@ class EqualityReadingFilter(ReadingFilter):
         identifiers = [t for t in tokens if type(t) is Identifier]
         not_identifiers = [t for t in tokens if type(t) is not Identifier]
         num_identifiers = len(identifiers)
-        ttypes = [t.ttype for t in not_identifiers if t.ttype is not None]
-        comparisons = [t for t in ttypes if "Comparison" in str(t)]
+        comparisons = [
+            t for t in not_identifiers if "Comparison" in str(t.ttype)
+        ]
         num_comparison = len(comparisons)
-        num_constants = len([t for t in ttypes if "Token.Literal" in str(t)])
+        num_constants = len(
+            [t for t in not_identifiers if "Token.Literal" in str(t.ttype)]
+        )
         if all(
             [n == 1 for n in [num_identifiers, num_comparison, num_constants]]
         ):
@@ -166,10 +181,10 @@ class UnequalityReadingFilter(ReadingFilter):
 
     def __revert_operator(self, operator: str) -> str:
         operator_map: dict[str, str] = {
-            ">": "<=",
-            "<": ">=",
-            ">=": "<",
-            "<=": ">",
+            ">": "<",
+            "<": ">",
+            ">=": "<=",
+            "<=": ">=",
         }
         return operator_map[operator]
 
@@ -201,10 +216,13 @@ class UnequalityReadingFilter(ReadingFilter):
         identifiers = [t for t in tokens if type(t) is Identifier]
         not_identifiers = [t for t in tokens if type(t) is not Identifier]
         num_identifiers = len(identifiers)
-        ttypes = [t.ttype for t in not_identifiers if t.ttype is not None]
-        comparisons = [t for t in ttypes if "Comparison" in str(t)]
+        comparisons = [
+            t for t in not_identifiers if "Comparison" in str(t.ttype)
+        ]
         num_comparison = len(comparisons)
-        num_constants = len([t for t in ttypes if "Token.Literal" in str(t)])
+        num_constants = len(
+            [t for t in not_identifiers if "Token.Literal" in str(t.ttype)]
+        )
         if all(
             [n == 1 for n in [num_identifiers, num_comparison, num_constants]]
         ):
@@ -230,8 +248,10 @@ class InSetReadingFilter(ReadingFilter):
     def operators(self) -> list[str]:
         if self._operators is None:
             self._operators = [
-                t for t in self.tokens if type(t) is Identifier
-            ][0].get_real_name()
+                t.normalized
+                for t in self.tokens
+                if t.normalized in ["IN", "NOT"]
+            ]
         return self._operators
 
     @property
@@ -241,6 +261,7 @@ class InSetReadingFilter(ReadingFilter):
                 [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
+            self._values = [v.strip() for v in self._values]
         return self._values
 
     @classmethod
@@ -272,8 +293,10 @@ class NotInSetReadingFilter(ReadingFilter):
     def operators(self) -> list[str]:
         if self._operators is None:
             self._operators = [
-                t for t in self.tokens if type(t) is Identifier
-            ][0].get_real_name()
+                t.normalized
+                for t in self.tokens
+                if t.normalized in ["IN", "NOT"]
+            ]
         return self._operators
 
     @property
@@ -283,6 +306,8 @@ class NotInSetReadingFilter(ReadingFilter):
                 [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
+            self._values = [v.strip() for v in self._values]
+
         return self._values
 
     @classmethod

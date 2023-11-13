@@ -199,6 +199,7 @@ class SELECT(Processing):
                             filter_type(comparison_tokens),
                         )
                     )
+                    print(filtermaps)
             elif type(token_or_list) is list:
                 # First case of interest:
                 # Belonging and Not Belonging to Set
@@ -221,8 +222,12 @@ class SELECT(Processing):
         where_tokens = [t for t in tokens if type(t) is Where]
         if len(where_tokens) > 0:
             splitted_tokens = split_token_list_in_and_or_keywords(
-                filter_spacing_and_punctuation_tokens(tokens[1:])
+                filter_spacing_and_punctuation_tokens(
+                    where_tokens[0].tokens[1:]
+                )
             )
+        else:
+            splitted_tokens = []
         filtermaps: list[tuple[str, ReadingFilter]] = []
         for token_set in splitted_tokens:
             t_map = extracts_reading_filters(token_set)
@@ -232,8 +237,8 @@ class SELECT(Processing):
                 filtermaps += t_map
             else:
                 filtermaps.append(t_map)
-        else:
-            return []
+
+        return filtermaps
 
     @classmethod
     def _process_filters_for_querying(
@@ -365,42 +370,51 @@ class SELECT(Processing):
         return df
 
     @classmethod
-    def __process_select(
+    def _process_select(
         cls,
         tables_to_select: dict[str, str],
         reading_filters: list[tuple[str, ReadingFilter]],
         columns_in_each_table: dict[str, dict[str, str]],
         conn: Connection,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> list[pd.DataFrame]:
         """
         Processes the SELECT statement for each table separately,
         using the reading_filters for optimizing the file reading steps.
         """
-        dfs: dict[str, pd.DataFrame] = {}
+        dfs: list[pd.DataFrame] = []
         for alias, name in tables_to_select.items():
-            dfs[alias] = cls.__process_select_from_table(
-                name,
-                [f[1] for f in reading_filters if f[0] == alias],
-                columns_in_each_table.get(alias, {}),
-                conn,
+            dfs.append(
+                cls._process_select_from_table(
+                    name,
+                    [f[1] for f in reading_filters if f[0] == alias],
+                    columns_in_each_table.get(alias, {}),
+                    conn,
+                )
             )
         return dfs
 
     @classmethod
     def _process_join_tables(
         cls,
-        dfs: dict[str, pd.DataFrame],
-        tables_to_select: dict[str, str],
+        dfs: list[pd.DataFrame],
         table_join_mappings: list[tuple[str, str]],
     ) -> pd.DataFrame:
         """
         Processes the JOIN keywords in the query, joining the tables in the order
         they appear in the statement.
         """
-        if len(table_join_mappings) > 0:
-            return pd.DataFrame()
+        num_joins = len(table_join_mappings)
+        if num_joins > 0:
+            for i in range(num_joins):
+                df_left = dfs[i]
+                df_right = dfs[i + 1]
+                df_right.set_index(table_join_mappings[i][1], inplace=True)
+                dfs[i + 1] = df_left.join(
+                    df_right, on=table_join_mappings[i][0], how="inner"
+                )
+            return dfs[-1]
         else:
-            return dfs[list(tables_to_select.keys())[0]]
+            return dfs[0]
 
     @classmethod
     def process(
@@ -420,9 +434,7 @@ class SELECT(Processing):
         dfs = cls._process_select(
             tables_to_select, reading_filters, columns_in_each_table, conn
         )
-        df = cls._process_join_tables(
-            dfs, tables_to_select, table_join_mappings
-        )
+        df = cls._process_join_tables(dfs, table_join_mappings)
         if querying_filters is not None:
             df = df.query(querying_filters)
         return df
