@@ -1,6 +1,6 @@
 import pytest
 import pandas as pd
-from app.adapters.repository.dataio import DataIO, ParquetIO, CSVIO
+from app.adapters.repository.dataio import DataIO, ParquetIO
 
 
 class TestDataIO:

@@ -7,3 +7,4 @@ mypy
 pylama
 pytest
 pytest-cov
+pyarrow

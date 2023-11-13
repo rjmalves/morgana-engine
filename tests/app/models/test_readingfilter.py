@@ -6,7 +6,6 @@ from app.models.readingfilter import (
     NotInSetReadingFilter,
 )
 from app.utils.sql import query2tokens, filter_spacing_tokens
-from typing import Callable
 import pytest
 
 

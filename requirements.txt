@@ -3,3 +3,4 @@ jsonschema
 pandas
 pandas-stubs
 python-dotenv
+pyarrow
