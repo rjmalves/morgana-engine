@@ -2,6 +2,8 @@ from abc import ABC
 import json
 from os import listdir
 from os.path import join
+import s3fs  # type: ignore
+import pathlib
 
 from app.models.schema import Schema
 
@@ -16,7 +18,7 @@ class Connection(ABC):
     JSON schema standards, with specialized fields.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         self._schema: Schema | None = None
 
     @property
@@ -124,10 +126,79 @@ class SQLConnection(Connection):
 
 class S3Connection(Connection):
     """
-    TODO - implement S3 connection using s3fs
+    Class that wraps a database connection to a S3 bucket, providing
+    to the user the abstraction for vieweing the FS as a database.
+
+    The S3 authentication is made via `s3fs` library, which expects
+    given arguments for the authentication process. See:
+
+    https://s3fs.readthedocs.io/en/latest/
+
+    These arguments must be passed to the constructor via `storage_options`,
+    as a dictionary. For example:
+
+    ```
+    storage_options = {
+        key: "my-key",
+        secret: "my-secret",
+    }
+
+    conn = S3Connection("s3://my-bucket", storage_options=storage_options)
+    ```
+
     """
 
-    pass
+    def __init__(self, path: str, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._path = path
+        if "storage_options" in kwargs:
+            self._storage_options = kwargs["storage_options"]
+        else:
+            self._storage_options = {}
+            self._s3 = s3fs.S3FileSystem(**self._storage_options)
+
+    @property
+    def uri(self) -> str:
+        return self._path
+
+    @property
+    def storage_options(self) -> dict:
+        return self._storage_options
+
+    @property
+    def schema(self) -> Schema:
+        if self._schema is None:
+            with self._s3.open(join(self.uri, ".schema.json"), "r") as file:
+                self._schema = Schema(json.load(file))
+        return self._schema
+
+    def list_files(self) -> list[str]:
+        if not self.schema.is_table:
+            raise ValueError("Cannot list files from a database schema")
+        files_with_extension = self._s3.ls(self.uri)
+        filenames_with_extension = [
+            pathlib.Path(f).parts[-1] for f in files_with_extension
+        ]
+        return [f.split(".")[0] for f in filenames_with_extension]
+
+    def list_partition_files(self, column: str) -> list[str]:
+        files = self.list_files()
+        # TODO - replace simple comparison by regex
+        files_with_column = [f for f in files if f"-{column}" in f]
+        return files_with_column
+
+    def access(self, table_name: str) -> "Connection":
+        if not self.schema.is_database:
+            raise ValueError(
+                f"Schema {self.uri} is not associated with a database"
+            )
+        tables = self.schema.tables
+        if tables is None:
+            raise ValueError("Schema does not have any tables")
+        elif table_name in tables:
+            return S3Connection(join(self.uri, tables[table_name]))
+        else:
+            raise ValueError(f"Table {table_name} not found!")
 
 
 MAPPING: dict[str, type[Connection]] = {

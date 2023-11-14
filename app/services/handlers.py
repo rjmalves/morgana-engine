@@ -22,7 +22,10 @@ def process_query(
     # - 1 statement only
     # - among the supported keywords
     # ...
-    tokens = query2tokens(query)
-    processer = factory(tokens[0].normalized)
-    r = processer.process(tokens, conn)
-    return r
+    try:
+        tokens = query2tokens(query)
+        processer = factory(tokens[0].normalized)
+        r = processer.process(tokens, conn)
+        return r
+    except Exception as e:
+        return {"error": str(e)}
