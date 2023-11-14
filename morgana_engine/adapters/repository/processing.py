@@ -34,7 +34,7 @@ class Processing(ABC):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         """
         Processes the tokens associated with the statement in the
         database specified in the connection.
@@ -46,7 +46,7 @@ class CREATE(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         raise NotImplementedError
 
 
@@ -54,7 +54,7 @@ class ALTER(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         raise NotImplementedError
 
 
@@ -62,7 +62,7 @@ class DROP(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         raise NotImplementedError
 
 
@@ -70,7 +70,7 @@ class INSERT(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         raise NotImplementedError
 
 
@@ -78,7 +78,7 @@ class UPDATE(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         raise NotImplementedError
 
 
@@ -86,7 +86,7 @@ class DELETE(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         raise NotImplementedError
 
 
@@ -435,7 +435,7 @@ class SELECT(Processing):
     @classmethod
     def process(
         cls, tokens: list[Token], conn: Connection
-    ) -> pd.DataFrame | dict | None:
+    ) -> pd.DataFrame | dict:
         tables_to_select = cls._process_table_identifiers(tokens)
         columns_in_each_table = cls._process_column_identifiers(
             tokens, tables_to_select
