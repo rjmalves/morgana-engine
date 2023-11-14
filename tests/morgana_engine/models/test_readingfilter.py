@@ -1,11 +1,11 @@
-from app.models.readingfilter import (
+from morgana_engine.models.readingfilter import (
     ReadingFilter,
     EqualityReadingFilter,
     UnequalityReadingFilter,
     InSetReadingFilter,
     NotInSetReadingFilter,
 )
-from app.utils.sql import query2tokens, filter_spacing_tokens
+from morgana_engine.utils.sql import query2tokens, filter_spacing_tokens
 import pytest
 
 

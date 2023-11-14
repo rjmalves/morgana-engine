@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import TypeVar, Callable
 from sqlparse.sql import Token, Identifier, Parenthesis  # type: ignore
-from app.utils.sql import filter_spacing_and_punctuation_tokens
+from morgana_engine.utils.sql import filter_spacing_and_punctuation_tokens
 
 T = TypeVar("T")
 

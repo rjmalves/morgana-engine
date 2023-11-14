@@ -1,7 +1,10 @@
 import pytest
 from os.path import join
-from app.models.schema import Schema
-from app.adapters.repository.connection import Connection, FSConnection
+from morgana_engine.models.schema import Schema
+from morgana_engine.adapters.repository.connection import (
+    Connection,
+    FSConnection,
+)
 
 
 class TestConnection:

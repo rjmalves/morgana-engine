@@ -1,7 +1,7 @@
-from app.adapters.repository.processing import SELECT
-from app.utils.sql import query2tokens, filter_spacing_tokens
-from app.models.readingfilter import UnequalityReadingFilter
-from app.adapters.repository.connection import FSConnection
+from morgana_engine.adapters.repository.processing import SELECT
+from morgana_engine.utils.sql import query2tokens, filter_spacing_tokens
+from morgana_engine.models.readingfilter import UnequalityReadingFilter
+from morgana_engine.adapters.repository.connection import FSConnection
 import pandas as pd
 
 

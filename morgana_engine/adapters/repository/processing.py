@@ -1,7 +1,9 @@
 from abc import ABC
-from app.adapters.repository.connection import Connection
-from app.adapters.repository.dataio import factory as io_factory
-from app.models.readingfilter import type_factory as readingfilter_factory
+from morgana_engine.adapters.repository.connection import Connection
+from morgana_engine.adapters.repository.dataio import factory as io_factory
+from morgana_engine.models.readingfilter import (
+    type_factory as readingfilter_factory,
+)
 import pandas as pd
 from sqlparse.sql import (  # type: ignore
     Token,
@@ -13,10 +15,13 @@ from sqlparse.sql import (  # type: ignore
 )
 from typing import Any
 from os.path import join
-from app.models.readingfilter import ReadingFilter
-from app.utils.types import casting_functions
-from app.utils.sql import partitions_in_file, partition_value_in_file
-from app.utils.sql import (
+from morgana_engine.models.readingfilter import ReadingFilter
+from morgana_engine.utils.types import casting_functions
+from morgana_engine.utils.sql import (
+    partitions_in_file,
+    partition_value_in_file,
+)
+from morgana_engine.utils.sql import (
     column_name_with_alias,
     filter_spacing_tokens,
     filter_punctuation_tokens,
@@ -160,6 +165,54 @@ class SELECT(Processing):
         return mappings
 
     @classmethod
+    def _extract_reading_filters(
+        cls, token_or_list: Token | list[Token]
+    ) -> list[tuple[str, ReadingFilter]]:
+        if type(token_or_list) is Parenthesis:
+            splitted_list = split_token_list_in_and_or_keywords(
+                filter_spacing_tokens(token_or_list.tokens)
+            )
+            filters = []
+            for token_list in splitted_list:
+                filters += cls._extract_reading_filters(token_list)
+            return filters
+        elif type(token_or_list) is Comparison:
+            # First case of interest:
+            # Equality and Unequality
+            comparison_tokens = filter_spacing_tokens(token_or_list.tokens)
+            identifiers = [
+                t for t in comparison_tokens if type(t) is Identifier
+            ]
+            filter_type = readingfilter_factory(comparison_tokens)
+            if filter_type:
+                return [
+                    (
+                        identifiers[0].get_parent_name(),
+                        filter_type(comparison_tokens),
+                    )
+                ]
+        elif type(token_or_list) is list:
+            # First case of interest:
+            # Belonging and Not Belonging to Set
+            comparison_tokens = filter_spacing_tokens(token_or_list)
+            if len(comparison_tokens) == 1:
+                return cls._extract_reading_filters(comparison_tokens[0])
+            elif len(comparison_tokens) in [3, 4]:
+                identifiers = [
+                    t for t in comparison_tokens if type(t) is Identifier
+                ]
+                filter_type = readingfilter_factory(comparison_tokens)
+                if filter_type:
+                    return [
+                        (
+                            identifiers[0].get_parent_name(),
+                            filter_type(comparison_tokens),
+                        )
+                    ]
+
+        return []
+
+    @classmethod
     def _process_filters_for_reading(
         cls, tokens: list[Token]
     ) -> list[tuple[str, ReadingFilter]]:
@@ -176,49 +229,6 @@ class SELECT(Processing):
 
         """
 
-        def extracts_reading_filters(token_or_list: Token | list[Token]):
-            """ """
-            if type(token_or_list) is Parenthesis:
-                splitted_list = split_token_list_in_and_or_keywords(
-                    filter_spacing_tokens(token_or_list.tokens)
-                )
-                for token_list in splitted_list:
-                    extracts_reading_filters(token_list)
-            elif type(token_or_list) is Comparison:
-                # First case of interest:
-                # Equality and Unequality
-                comparison_tokens = filter_spacing_tokens(token_or_list.tokens)
-                identifiers = [
-                    t for t in comparison_tokens if type(t) is Identifier
-                ]
-                filter_type = readingfilter_factory(comparison_tokens)
-                if filter_type:
-                    filtermaps.append(
-                        (
-                            identifiers[0].get_parent_name(),
-                            filter_type(comparison_tokens),
-                        )
-                    )
-                    print(filtermaps)
-            elif type(token_or_list) is list:
-                # First case of interest:
-                # Belonging and Not Belonging to Set
-                comparison_tokens = filter_spacing_tokens(token_or_list)
-                if len(comparison_tokens) == 1:
-                    extracts_reading_filters(comparison_tokens[0])
-                elif len(comparison_tokens) in [3, 4]:
-                    identifiers = [
-                        t for t in comparison_tokens if type(t) is Identifier
-                    ]
-                    filter_type = readingfilter_factory(comparison_tokens)
-                    if filter_type:
-                        filtermaps.append(
-                            (
-                                identifiers[0].get_parent_name(),
-                                filter_type(comparison_tokens),
-                            )
-                        )
-
         where_tokens = [t for t in tokens if type(t) is Where]
         if len(where_tokens) > 0:
             splitted_tokens = split_token_list_in_and_or_keywords(
@@ -230,13 +240,8 @@ class SELECT(Processing):
             splitted_tokens = []
         filtermaps: list[tuple[str, ReadingFilter]] = []
         for token_set in splitted_tokens:
-            t_map = extracts_reading_filters(token_set)
-            if not t_map:
-                continue
-            if type(t_map) is list:
-                filtermaps += t_map
-            else:
-                filtermaps.append(t_map)
+            t_map = cls._extract_reading_filters(token_set)
+            filtermaps += t_map
 
         return filtermaps
 
@@ -289,6 +294,48 @@ class SELECT(Processing):
             return None
 
     @classmethod
+    def _read_files_with_partitions(
+        cls,
+        conn: Connection,
+        partition_columns: dict[str, str],
+        filters: list[ReadingFilter],
+    ) -> list[str]:
+        files_to_read: list[str] = []
+        for c, c_type in partition_columns.items():
+            partition_files = conn.list_partition_files(c)
+            casting_func = casting_functions(c_type)
+            # Builds a value: [files] map
+            partition_maps: dict[Any, list[str]] = {}
+            for partition_file in partition_files:
+                v = casting_func(partition_value_in_file(partition_file, c))
+                if v in partition_maps:
+                    partition_maps[v].append(partition_file)
+                else:
+                    partition_maps[v] = [partition_file]
+            # List all possible values
+            partition_values = [
+                casting_func(v) for v in list(partition_maps.keys())
+            ]
+            # Apply filters
+            column_filters = [f for f in filters if f.column == c]
+            if len(column_filters) == 0:
+                filtered_values = partition_values
+            else:
+                filtered_values = []
+                for reading_filter in column_filters:
+                    filtered_values += reading_filter.apply(
+                        partition_values, casting_func
+                    )
+                filtered_values = list(set(filtered_values))
+            # Find files with values
+            value_files = []
+            for v in filtered_values:
+                value_files += partition_maps[v]
+            files_to_read += value_files
+        files_to_read = list(set(files_to_read))
+        return files_to_read
+
+    @classmethod
     def _process_select_from_table(
         cls,
         table: str,
@@ -311,40 +358,9 @@ class SELECT(Processing):
         if len(partition_columns) == 0:
             files_to_read.append(table)
         else:
-            for c, c_type in partition_columns.items():
-                partition_files = table_conn.list_partition_files(c)
-                casting_func = casting_functions(c_type)
-                # Builds a value: [files] map
-                partition_maps: dict[Any, list[str]] = {}
-                for partition_file in partition_files:
-                    v = casting_func(
-                        partition_value_in_file(partition_file, c)
-                    )
-                    if v in partition_maps:
-                        partition_maps[v].append(partition_file)
-                    else:
-                        partition_maps[v] = [partition_file]
-                # List all possible values
-                partition_values = [
-                    casting_func(v) for v in list(partition_maps.keys())
-                ]
-                # Apply filters
-                column_filters = [f for f in filters if f.column == c]
-                if len(column_filters) == 0:
-                    filtered_values = partition_values
-                else:
-                    filtered_values = []
-                    for reading_filter in column_filters:
-                        filtered_values += reading_filter.apply(
-                            partition_values, casting_func
-                        )
-                    filtered_values = list(set(filtered_values))
-                # Find files with values
-                value_files = []
-                for v in filtered_values:
-                    value_files += partition_maps[v]
-                files_to_read += value_files
-            files_to_read = list(set(files_to_read))
+            files_to_read += cls._read_files_with_partitions(
+                table_conn, partition_columns, filters
+            )
 
         dfs: list[pd.DataFrame] = []
         for f in files_to_read:

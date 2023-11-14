@@ -8,3 +8,6 @@ pylama
 pytest
 pytest-cov
 pyarrow
+boto3
+boto3-stubs
+s3fs>=2023.10.0
