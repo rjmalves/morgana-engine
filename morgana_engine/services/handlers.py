@@ -1,13 +1,13 @@
-from app.adapters.repository.connection import Connection
-from app.adapters.repository.processing import factory
-from app.utils.sql import query2tokens
+from morgana_engine.adapters.repository.connection import Connection
+from morgana_engine.adapters.repository.processing import factory
+from morgana_engine.utils.sql import query2tokens
 import pandas as pd
 
 
 def process_query(
     query: str,
     conn: Connection,
-) -> pd.DataFrame | dict | None:
+) -> pd.DataFrame | dict:
     """
     Process a SQL query and return the result.
 
@@ -28,4 +28,4 @@ def process_query(
         r = processer.process(tokens, conn)
         return r
     except Exception as e:
-        return {"error": str(e)}
+        return {"statusCode": 500, "error": str(e)}

@@ -1,7 +1,9 @@
 from abc import ABC
-from app.adapters.repository.connection import Connection
-from app.adapters.repository.dataio import factory as io_factory
-from app.models.readingfilter import type_factory as readingfilter_factory
+from morgana_engine.adapters.repository.connection import Connection
+from morgana_engine.adapters.repository.dataio import factory as io_factory
+from morgana_engine.models.readingfilter import (
+    type_factory as readingfilter_factory,
+)
 import pandas as pd
 from sqlparse.sql import (  # type: ignore
     Token,
@@ -13,10 +15,13 @@ from sqlparse.sql import (  # type: ignore
 )
 from typing import Any
 from os.path import join
-from app.models.readingfilter import ReadingFilter
-from app.utils.types import casting_functions
-from app.utils.sql import partitions_in_file, partition_value_in_file
-from app.utils.sql import (
+from morgana_engine.models.readingfilter import ReadingFilter
+from morgana_engine.utils.types import casting_functions
+from morgana_engine.utils.sql import (
+    partitions_in_file,
+    partition_value_in_file,
+)
+from morgana_engine.utils.sql import (
     column_name_with_alias,
     filter_spacing_tokens,
     filter_punctuation_tokens,

@@ -5,7 +5,7 @@ from os.path import join
 import s3fs  # type: ignore
 import pathlib
 
-from app.models.schema import Schema
+from morgana_engine.models.schema import Schema
 
 
 class Connection(ABC):

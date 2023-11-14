@@ -1,4 +1,4 @@
-from app.models.schema import Schema
+from morgana_engine.models.schema import Schema
 
 
 class TestSchema:
