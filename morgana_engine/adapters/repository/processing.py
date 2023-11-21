@@ -126,6 +126,9 @@ class SELECT(Processing):
         Processes the tokens associated with the column identifiers in
         order to obtain a map of table_alias: {column_alias: column_name}.
         """
+        # TODO - think about how to signal that a wildcard exists
+        if "*" in [t.normalized for t in tokens]:
+            return {a: {} for a in tables_to_select.keys()}
         identifier_list = [t for t in tokens if type(t) is IdentifierList][0]
         identifier_tokens: list[Identifier] = [
             t for t in identifier_list.tokens if type(t) is Identifier
@@ -374,9 +377,12 @@ class SELECT(Processing):
                 casting_func = casting_functions(
                     table_conn.schema.partition_keys[k]
                 )
-                if k in columns.keys():
+                if k in columns.keys() or (len(columns) == 0):
                     dff[k] = casting_func(v)
-            dfs.append(dff[columns.keys()].copy())
+            if len(columns) == 0:
+                dfs.append(dff.copy())
+            else:
+                dfs.append(dff[columns.keys()].copy())
         df = pd.concat(dfs, ignore_index=True)
         # Rename due columns
         df.rename(
