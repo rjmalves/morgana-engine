@@ -7,11 +7,11 @@ def lambda_handler(event, context):
 
 
 request_body = {
-    "database": "s3://ons-pem-historico/eolica/backup/nwp/gfs/",
+    "database": "s3://my-bucket",
     "query": """
         SELECT *
-        FROM velocidade_vento_100m
-        WHERE quadricula IN (1, );
+        FROM my_table
+        WHERE partition_column IN (1, );
         """,
 }
 df = lambda_handler(request_body, {})
