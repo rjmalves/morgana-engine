@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Configura o Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install requirements
+      run: |
+        python -m pip install -r dev-requirements.txt
+    - name: Runs tests
+      run: |
+        python -m pytest --cov-report=xml --cov=morgana_engine tests/
+    - uses: codecov/codecov-action@v3
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    - name: Static typing check
+      run: |
+        python -m mypy ./morgana_engine
+    - name: Code quality check
+      run: |
+        python -m pylama --ignore E203 ./morgana_engine
