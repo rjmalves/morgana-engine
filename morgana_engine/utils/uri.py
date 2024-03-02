@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 from urllib.request import url2pathname
