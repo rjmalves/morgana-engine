@@ -1,0 +1,22 @@
+{
+    "application": "morgana-engine-tests",
+    "name": "data",
+    "description": "Tests for the morgana engine",
+    "uri": "./data/model_schema.json",
+    "version": "1.0.0",
+    "modifiedTime": "2024-01-01T00:00:00.000Z",
+    "tables": [
+        {
+            "name": "usinas",
+            "uri": "usinas"
+        },
+        {
+            "name": "usinas_part_subsis",
+            "uri": "usinas_part_subsis"
+        },
+        {
+            "name": "usinas_part_id",
+            "uri": "usinas_part_id"
+        }
+    ]
+}

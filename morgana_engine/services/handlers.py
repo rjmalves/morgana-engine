@@ -2,6 +2,7 @@ from morgana_engine.adapters.repository.connection import Connection
 from morgana_engine.adapters.repository.processing import factory
 from morgana_engine.utils.sql import query2tokens
 import pandas as pd
+import traceback
 
 
 def process_query(
@@ -28,4 +29,5 @@ def process_query(
         r = processer.process(tokens, conn)
         return r
     except Exception as e:
+        traceback.print_exc()
         return {"statusCode": 500, "error": str(e)}

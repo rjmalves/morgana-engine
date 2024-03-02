@@ -6,6 +6,13 @@ import s3fs  # type: ignore
 import pathlib
 
 from morgana_engine.models.schema import Schema
+from morgana_engine.utils.uri import (
+    is_uri,
+    uri_scheme,
+    ensure_absolute_path,
+    path_to_uri,
+    uri_to_path,
+)
 
 
 class Connection(ABC):
@@ -70,13 +77,20 @@ class FSConnection(Connection):
     to the user the abstraction for vieweing the FS as a database.
     """
 
-    def __init__(self, path: str, *args, **kwargs) -> None:
+    def __init__(self, uri: str, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._path = path
+        if is_uri(uri):
+            self._uri = uri
+        else:
+            self._uri = path_to_uri(ensure_absolute_path(uri, "."), "file")
 
     @property
     def uri(self) -> str:
-        return self._path
+        return self._uri
+
+    @property
+    def path(self) -> str:
+        return uri_to_path(self._uri)
 
     @property
     def storage_options(self) -> dict:
@@ -85,19 +99,21 @@ class FSConnection(Connection):
     @property
     def schema(self) -> Schema:
         if self._schema is None:
-            with open(join(self.uri, ".schema.json"), "r") as file:
+            with open(join(self.path, "schema.json"), "r") as file:
                 self._schema = Schema(json.load(file))
         return self._schema
 
     def list_files(self) -> list[str]:
         if not self.schema.is_table:
             raise ValueError("Cannot list files from a database schema")
-        files_with_extension = listdir(self.uri)
+        files_with_extension = listdir(self.path)
         return [f.split(".")[0] for f in files_with_extension]
 
     def list_partition_files(self, column: str) -> list[str]:
         files = self.list_files()
         # TODO - replace simple comparison by regex
+        # maybe this comparison is not needed, all files will
+        # belong to the table
         files_with_column = [f for f in files if f"-{column}" in f]
         return files_with_column
 
@@ -110,7 +126,24 @@ class FSConnection(Connection):
         if tables is None:
             raise ValueError("Schema does not have any tables")
         elif table_name in tables:
-            return FSConnection(join(self.uri, tables[table_name]))
+            table_uri = tables[table_name]
+            # Field id already an URI: just access
+            if is_uri(table_uri):
+                if uri_scheme(table_uri).lower() == "file":
+                    return FSConnection(
+                        table_uri, storage_options=self.storage_options
+                    )
+                else:
+                    raise ValueError(
+                        f"Table URI {table_uri} is not a valid file URI"
+                    )
+            else:
+                # Field is a path: convert to URI and access
+                table_path = ensure_absolute_path(table_uri, self.path)
+                return FSConnection(
+                    path_to_uri(table_path, "file"),
+                    storage_options=self.storage_options,
+                )
         else:
             raise ValueError(f"Table {table_name} not found!")
 
@@ -148,18 +181,26 @@ class S3Connection(Connection):
 
     """
 
-    def __init__(self, path: str, *args, **kwargs) -> None:
+    def __init__(self, uri: str, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._path = path
+        if is_uri(uri):
+            self._uri = uri
+        else:
+            self._uri = path_to_uri(uri, "s3")
+
         if "storage_options" in kwargs:
             self._storage_options = kwargs["storage_options"]
         else:
             self._storage_options = {}
-            self._s3 = s3fs.S3FileSystem(**self._storage_options)
+        self._s3 = s3fs.S3FileSystem(**self._storage_options)
 
     @property
     def uri(self) -> str:
-        return self._path
+        return self._uri
+
+    @property
+    def path(self) -> str:
+        return uri_to_path(self._uri)
 
     @property
     def storage_options(self) -> dict:
@@ -168,7 +209,8 @@ class S3Connection(Connection):
     @property
     def schema(self) -> Schema:
         if self._schema is None:
-            with self._s3.open(join(self.uri, ".schema.json"), "r") as file:
+            print("PATH:", join(self.path, "schema.json"))
+            with self._s3.open(join(self.path, "schema.json"), "r") as file:
                 self._schema = Schema(json.load(file))
         return self._schema
 
@@ -184,10 +226,13 @@ class S3Connection(Connection):
     def list_partition_files(self, column: str) -> list[str]:
         files = self.list_files()
         # TODO - replace simple comparison by regex
+        # maybe this comparison is not needed, all files will
+        # belong to the table
         files_with_column = [f for f in files if f"-{column}" in f]
         return files_with_column
 
     def access(self, table_name: str) -> "Connection":
+        print("Accessing")
         if not self.schema.is_database:
             raise ValueError(
                 f"Schema {self.uri} is not associated with a database"
@@ -196,7 +241,24 @@ class S3Connection(Connection):
         if tables is None:
             raise ValueError("Schema does not have any tables")
         elif table_name in tables:
-            return S3Connection(join(self.uri, tables[table_name]))
+            table_uri = tables[table_name]
+            # Field id already an URI: just access
+            if is_uri(table_uri):
+                if uri_scheme(table_uri).lower() == "s3":
+                    return S3Connection(
+                        table_uri, storage_options=self.storage_options
+                    )
+                else:
+                    raise ValueError(
+                        f"Table URI {table_uri} is not a valid S3 URI"
+                    )
+            else:
+                # Field is a path: convert to URI and access
+                table_path = join(self.path, table_uri)
+                return S3Connection(
+                    path_to_uri(table_path, "s3"),
+                    storage_options=self.storage_options,
+                )
         else:
             raise ValueError(f"Table {table_name} not found!")
 

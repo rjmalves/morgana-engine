@@ -1,10 +1,11 @@
 import pytest
-from os.path import join
+from pathlib import Path
 from morgana_engine.models.schema import Schema
 from morgana_engine.adapters.repository.connection import (
     Connection,
     FSConnection,
 )
+from morgana_engine.utils.uri import path_to_uri
 
 
 class TestConnection:
@@ -56,13 +57,15 @@ class TestFSConnection:
             conn.access("non_existent_table")
         sub_conn = conn.access("usinas")
         assert isinstance(sub_conn, FSConnection)
-        assert sub_conn.uri == join("tests/data", "usinas")
+        assert sub_conn.uri == path_to_uri(
+            str(Path("tests/data/usinas").resolve()), "file"
+        )
         assert sub_conn.schema == Schema(
             {
-                "uri": "./data/usinas/.schema.json",
+                "uri": "./data/usinas/schema.json",
                 "name": "usinas",
-                "schema_type": "table",
-                "format": "PARQUET",
+                "description": "",
+                "fileType": ".parquet.gzip",
                 "columns": [
                     {"name": "id", "type": "integer"},
                     {"name": "codigo", "type": "string"},
@@ -75,7 +78,7 @@ class TestFSConnection:
                     {"name": "subsistema_geografico", "type": "string"},
                     {"name": "subsistema_eletrico", "type": "string"},
                 ],
-                "partition_keys": [],
+                "partitions": [],
             }
         )
 

@@ -1,8 +1,8 @@
 {
-    "uri": "./data/usinas/.schema.json",
-    "name": "usinas",
-    "schema_type": "table",
-    "format": "PARQUET",
+    "name": "usinas_part_subsis",
+    "description": "",
+    "uri": "./data/usinas_part_subsis/schema.json",
+    "fileType": ".parquet.gzip",
     "columns": [
         {
             "name": "id",
@@ -37,13 +37,14 @@
             "type": "datetime"
         },
         {
-            "name": "subsistema_geografico",
-            "type": "string"
-        },
-        {
             "name": "subsistema_eletrico",
             "type": "string"
         }
     ],
-    "partition_keys": []
+    "partitions": [
+        {
+            "name": "subsistema_geografico",
+            "type": "string"
+        }
+    ]
 }

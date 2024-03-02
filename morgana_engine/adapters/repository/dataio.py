@@ -33,6 +33,18 @@ class DataIO(ABC):
 
 
 class ParquetIO(DataIO):
+    EXTENSION = ".parquet"
+
+    @classmethod
+    def read(cls, path: str, *args, **kwargs) -> pd.DataFrame:
+        return pd.read_parquet(path + cls.EXTENSION, *args, **kwargs)
+
+    @classmethod
+    def write(cls, df: pd.DataFrame, path: str, *args, **kwargs):
+        df.to_parquet(path, *args, **kwargs)
+
+
+class ParquetGzipIO(DataIO):
     EXTENSION = ".parquet.gzip"
 
     @classmethod
@@ -61,8 +73,9 @@ class CSVIO(DataIO):
 
 
 MAPPING: dict[str, type[DataIO]] = {
-    "PARQUET": ParquetIO,
-    "CSV": CSVIO,
+    ".parquet": ParquetIO,
+    ".parquet.gzip": ParquetGzipIO,
+    ".csv": CSVIO,
 }
 
 

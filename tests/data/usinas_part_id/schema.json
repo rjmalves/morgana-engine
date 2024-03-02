@@ -1,13 +1,9 @@
 {
-    "uri": "./data/usinas_part_subsis/.schema.json",
-    "name": "usinas_part_subsis",
-    "schema_type": "table",
-    "format": "PARQUET",
+    "name": "usinas_part_id",
+    "description": "",
+    "uri": "./data/usinas_part_id/schema.json",
+    "fileType": ".parquet.gzip",
     "columns": [
-        {
-            "name": "id",
-            "type": "integer"
-        },
         {
             "name": "codigo",
             "type": "string"
@@ -37,14 +33,18 @@
             "type": "datetime"
         },
         {
+            "name": "subsistema_geografico",
+            "type": "string"
+        },
+        {
             "name": "subsistema_eletrico",
             "type": "string"
         }
     ],
-    "partition_keys": [
+    "partitions": [
         {
-            "name": "subsistema_geografico",
-            "type": "string"
+            "name": "id",
+            "type": "integer"
         }
     ]
 }

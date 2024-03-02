@@ -54,21 +54,21 @@ class Schema:
         return self._json_dict["name"]
 
     @property
-    def format(self) -> str | None:
-        return self._json_dict.get("format")
+    def file_type(self) -> str | None:
+        return self._json_dict.get("fileType")
 
     @property
     def is_database(self) -> bool:
-        return self._json_dict["schema_type"] == "database"
+        return "tables" in self._json_dict
 
     @property
     def is_table(self) -> bool:
-        return self._json_dict["schema_type"] == "table"
+        return "columns" in self._json_dict
 
     @property
     def tables(self) -> dict[str, str]:
         if self.is_database:
-            return {t["name"]: t["ref"] for t in self._json_dict["tables"]}
+            return {t["name"]: t["uri"] for t in self._json_dict["tables"]}
         else:
             return {}
 
@@ -80,10 +80,10 @@ class Schema:
             return {}
 
     @property
-    def partition_keys(self) -> dict[str, str]:
+    def partitions(self) -> dict[str, str]:
         if self.is_table:
             return {
-                k["name"]: k["type"] for k in self._json_dict["partition_keys"]
+                k["name"]: k["type"] for k in self._json_dict["partitions"]
             }
         else:
             return {}

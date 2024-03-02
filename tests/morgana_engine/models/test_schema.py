@@ -6,7 +6,7 @@ class TestSchema:
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "database",
+            "tables": [],
         }
         schema = Schema(schema_dict)
         assert schema.uri == "test_uri"
@@ -15,7 +15,7 @@ class TestSchema:
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "database",
+            "tables": [],
         }
         schema = Schema(schema_dict)
         assert schema.name == "test_name"
@@ -24,17 +24,17 @@ class TestSchema:
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "table",
-            "format": "parquet",
+            "fileType": ".parquet",
+            "columns": [],
         }
         schema = Schema(schema_dict)
-        assert schema.format == "parquet"
+        assert schema.file_type == ".parquet"
 
     def test_is_database(self):
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "database",
+            "tables": [],
         }
         schema = Schema(schema_dict)
         assert schema.is_database is True
@@ -43,19 +43,18 @@ class TestSchema:
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "table",
+            "fileType": ".parquet",
+            "columns": [],
         }
         schema = Schema(schema_dict)
         assert schema.is_table is True
 
     def test_tables(self):
         schema_dict = {
-            "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "database",
             "tables": [
-                {"name": "table1", "ref": "ref1"},
-                {"name": "table2", "ref": "ref2"},
+                {"name": "table1", "uri": "ref1"},
+                {"name": "table2", "uri": "ref2"},
             ],
         }
         schema = Schema(schema_dict)
@@ -65,7 +64,6 @@ class TestSchema:
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "table",
             "columns": [
                 {"name": "col1", "type": "int"},
                 {"name": "col2", "type": "string"},
@@ -74,29 +72,27 @@ class TestSchema:
         schema = Schema(schema_dict)
         assert schema.columns == {"col1": "int", "col2": "string"}
 
-    def test_partition_keys(self):
+    def test_partitions(self):
         schema_dict = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "table",
-            "partition_keys": [
+            "columns": [],
+            "partitions": [
                 {"name": "key1", "type": "int"},
                 {"name": "key2", "type": "string"},
             ],
         }
         schema = Schema(schema_dict)
-        assert schema.partition_keys == {"key1": "int", "key2": "string"}
+        assert schema.partitions == {"key1": "int", "key2": "string"}
 
     def test_eq(self):
         schema_dict1 = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "database",
         }
         schema_dict2 = {
             "uri": "test_uri",
             "name": "test_name",
-            "schema_type": "database",
         }
         schema1 = Schema(schema_dict1)
         schema2 = Schema(schema_dict2)

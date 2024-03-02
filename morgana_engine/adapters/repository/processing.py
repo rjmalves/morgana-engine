@@ -138,9 +138,9 @@ class SELECT(Processing):
         )
         identifier_dict: dict[str, dict[str, str]] = {a: {} for a in parents}
         for t in identifier_tokens:
-            identifier_dict[t.get_parent_name()][
-                t.get_real_name()
-            ] = column_name_with_alias(t, tables_to_select)
+            identifier_dict[t.get_parent_name()][t.get_real_name()] = (
+                column_name_with_alias(t, tables_to_select)
+            )
         return identifier_dict
 
     @classmethod
@@ -349,11 +349,11 @@ class SELECT(Processing):
         table_conn = conn.access(table)
         if not table_conn.schema.is_table:
             raise ValueError(f"Schema {table} is not a table")
-        table_format = str(table_conn.schema.format)
+        table_format = str(table_conn.schema.file_type)
         table_io = io_factory(table_format)
 
         # List partitioned columns from schema
-        partition_columns: dict[str, str] = table_conn.schema.partition_keys
+        partition_columns: dict[str, str] = table_conn.schema.partitions
 
         # The main result is the list of filenames that must be read
         # and concatenated.
@@ -375,7 +375,7 @@ class SELECT(Processing):
             f_partitions = partitions_in_file(f)
             for k, v in f_partitions.items():
                 casting_func = casting_functions(
-                    table_conn.schema.partition_keys[k]
+                    table_conn.schema.partitions[k]
                 )
                 if k in columns.keys() or (len(columns) == 0):
                     dff[k] = casting_func(v)
