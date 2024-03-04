@@ -5,7 +5,7 @@ pandas-stubs
 python-dotenv
 mypy
 pylama
-pytest
+pytest==8.0.2
 pytest-cov
 pyarrow
 boto3
