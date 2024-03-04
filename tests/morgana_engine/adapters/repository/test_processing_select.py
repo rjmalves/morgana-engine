@@ -3,6 +3,8 @@ from morgana_engine.utils.sql import query2tokens, filter_spacing_tokens
 from morgana_engine.models.readingfilter import UnequalityReadingFilter
 from morgana_engine.adapters.repository.connection import FSConnection
 import pandas as pd
+import pytz
+from datetime import datetime
 
 
 class TestSELECT:
@@ -122,7 +124,20 @@ class TestSELECT:
             df["usinas_part_subsis_capacidade_instalada"]
         )
 
-    def test_process(self):
+    def test_process_where_integer_eq(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada = 30"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+            columns=["id", "codigo", "nome", "capacidade_instalada"],
+        )
+        assert df.equals(
+            expected_df.loc[expected_df["capacidade_instalada"] == 30]
+        )
+
+    def test_process_where_integer_gt(self):
         conn = FSConnection("tests/data")
         query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada > 100"
         tokens = query2tokens(query)
@@ -133,4 +148,118 @@ class TestSELECT:
         )
         assert df.equals(
             expected_df.loc[expected_df["capacidade_instalada"] > 100]
+        )
+
+    def test_process_where_integer_lt(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada < 100"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+            columns=["id", "codigo", "nome", "capacidade_instalada"],
+        )
+        assert df.equals(
+            expected_df.loc[expected_df["capacidade_instalada"] < 100]
+        )
+
+    def test_process_where_integer_ge(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada >= 100"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+            columns=["id", "codigo", "nome", "capacidade_instalada"],
+        )
+        assert df.equals(
+            expected_df.loc[expected_df["capacidade_instalada"] >= 100]
+        )
+
+    def test_process_where_integer_le(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada <= 100"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+            columns=["id", "codigo", "nome", "capacidade_instalada"],
+        )
+        assert df.equals(
+            expected_df.loc[expected_df["capacidade_instalada"] <= 100]
+        )
+
+    def test_process_where_datetime_eq(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada = '2023-01-01T00:00:00+00:00'"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"]
+                == datetime(2023, 1, 1, tzinfo=pytz.utc)
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_gt(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada > '2023-01-01T00:00:00+00:00'"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"]
+                > datetime(2023, 1, 1, tzinfo=pytz.utc)
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_ge(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada >= '2023-01-01T00:00:00+00:00'"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"]
+                >= datetime(2023, 1, 1, tzinfo=pytz.utc)
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_lt(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada < '2023-01-01T00:00:00+00:00'"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"]
+                < datetime(2023, 1, 1, tzinfo=pytz.utc)
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_le(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada <= '2023-01-01T00:00:00+00:00'"
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"]
+                <= datetime(2023, 1, 1, tzinfo=pytz.utc)
+            ].reset_index(drop=True)
         )

@@ -17,6 +17,10 @@
         {
             "name": "usinas_part_id",
             "uri": "usinas_part_id"
+        },
+        {
+            "name": "velocidade_vento_100m",
+            "uri": "velocidade_vento_100m"
         }
     ]
 }

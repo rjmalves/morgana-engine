@@ -1,0 +1,30 @@
+{
+    "name": "velocidade_vento_100m",
+    "description": "",
+    "uri": "./data/velocidade_vento_100m/schema.json",
+    "fileType": ".parquet.gzip",
+    "columns": [
+        {
+            "name": "data_rodada",
+            "type": "datetime"
+        },
+        {
+            "name": "data_previsao",
+            "type": "datetime"
+        },
+        {
+            "name": "dia_previsao",
+            "type": "integer"
+        },
+        {
+            "name": "valor",
+            "type": "number"
+        }
+    ],
+    "partitions": [
+        {
+            "name": "quadricula",
+            "type": "integer"
+        }
+    ]
+}
