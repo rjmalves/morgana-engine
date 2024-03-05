@@ -4,7 +4,7 @@ from morgana_engine.models.readingfilter import UnequalityReadingFilter
 from morgana_engine.adapters.repository.connection import FSConnection
 import pandas as pd
 import pytz
-from datetime import datetime
+from datetime import datetime, date
 
 
 class TestSELECT:
@@ -261,5 +261,125 @@ class TestSELECT:
             expected_df.loc[
                 expected_df["data_rodada"]
                 <= datetime(2023, 1, 1, tzinfo=pytz.utc)
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_date_eq(self):
+        conn = FSConnection("tests/data")
+        query = (
+            "SELECT * FROM usinas WHERE data_inicio_operacao = '2009-08-26'"
+        )
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+        )
+        expected_df["data_inicio_operacao"] = pd.to_datetime(
+            expected_df["data_inicio_operacao"]
+        )
+        expected_df["data_inicio_simulacao"] = pd.to_datetime(
+            expected_df["data_inicio_simulacao"]
+        )
+
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_inicio_operacao"]
+                == datetime.fromisoformat("2009-08-26")
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_date_gt(self):
+        conn = FSConnection("tests/data")
+        query = (
+            "SELECT * FROM usinas WHERE data_inicio_operacao > '2009-08-26'"
+        )
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+        )
+        expected_df["data_inicio_operacao"] = pd.to_datetime(
+            expected_df["data_inicio_operacao"]
+        )
+        expected_df["data_inicio_simulacao"] = pd.to_datetime(
+            expected_df["data_inicio_simulacao"]
+        )
+
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_inicio_operacao"]
+                > datetime.fromisoformat("2009-08-26")
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_date_ge(self):
+        conn = FSConnection("tests/data")
+        query = (
+            "SELECT * FROM usinas WHERE data_inicio_operacao >= '2009-08-26'"
+        )
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+        )
+        expected_df["data_inicio_operacao"] = pd.to_datetime(
+            expected_df["data_inicio_operacao"]
+        )
+        expected_df["data_inicio_simulacao"] = pd.to_datetime(
+            expected_df["data_inicio_simulacao"]
+        )
+
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_inicio_operacao"]
+                >= datetime.fromisoformat("2009-08-26")
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_date_lt(self):
+        conn = FSConnection("tests/data")
+        query = (
+            "SELECT * FROM usinas WHERE data_inicio_operacao < '2009-08-26'"
+        )
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+        )
+        expected_df["data_inicio_operacao"] = pd.to_datetime(
+            expected_df["data_inicio_operacao"]
+        )
+        expected_df["data_inicio_simulacao"] = pd.to_datetime(
+            expected_df["data_inicio_simulacao"]
+        )
+
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_inicio_operacao"]
+                < datetime.fromisoformat("2009-08-26")
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_date_le(self):
+        conn = FSConnection("tests/data")
+        query = (
+            "SELECT * FROM usinas WHERE data_inicio_operacao <= '2009-08-26'"
+        )
+        tokens = query2tokens(query)
+        df = SELECT.process(tokens[1:], conn)
+        expected_df = pd.read_parquet(
+            "tests/data/usinas/usinas.parquet.gzip",
+        )
+        expected_df["data_inicio_operacao"] = pd.to_datetime(
+            expected_df["data_inicio_operacao"]
+        )
+        expected_df["data_inicio_simulacao"] = pd.to_datetime(
+            expected_df["data_inicio_simulacao"]
+        )
+
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_inicio_operacao"]
+                <= datetime.fromisoformat("2009-08-26")
             ].reset_index(drop=True)
         )

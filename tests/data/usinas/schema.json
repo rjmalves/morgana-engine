@@ -30,11 +30,11 @@
         },
         {
             "name": "data_inicio_operacao",
-            "type": "datetime"
+            "type": "date"
         },
         {
             "name": "data_inicio_simulacao",
-            "type": "datetime"
+            "type": "date"
         },
         {
             "name": "subsistema_geografico",
