@@ -75,7 +75,7 @@ def split_token_list_in_and_or_keywords(
 
 
 def partitions_in_file(filename: str) -> dict[str, str]:
-    parts = filename.split("-")[1:-1]
+    parts = [p for p in filename.split("-")[1:] if len(p) > 0]
     partition_values: dict[str, str] = {}
     for p in parts:
         part_key_value = p.split("=")
