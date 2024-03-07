@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Callable
 
 
@@ -19,7 +19,7 @@ def casting_functions(schema_type: str) -> Callable:
         "number": float,
         "string": str,
         "bool": bool,
-        "date": datetime.fromisoformat,
+        "date": date.fromisoformat,
         "datetime": datetime.fromisoformat,
     }
     return type_mappings.get(schema_type, lambda x: x)

@@ -547,6 +547,20 @@ class SELECT(Processing):
             columns=columns,
             inplace=True,
         )
+        # List non-partitioned columns from schema
+        non_partitioned_columns: dict[str, str] = table_conn.schema.columns
+        # Filters for the columns that have been queried
+        non_partitioned_columns = {
+            k: v for k, v in non_partitioned_columns.items() if k in df.columns
+        }
+        for col, col_type in non_partitioned_columns.items():
+            # Casts columns to the right types when date or datetime
+            if pd.api.types.is_object_dtype(df[col]) and col_type in [
+                "date",
+                "datetime",
+            ]:
+                df[col] = pd.to_datetime(df[col])
+
         return {
             "processedFiles": files_to_read,
             "data": df,
