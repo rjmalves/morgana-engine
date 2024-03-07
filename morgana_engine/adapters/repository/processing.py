@@ -303,6 +303,11 @@ class SELECT(Processing):
         partition_columns: dict[str, str],
         filters: list[ReadingFilter],
     ) -> list[str]:
+        # The received filters must contain the original column name,
+        # and not the alias, if the column is a partition column.
+        # This is important for the partition reading
+
+        print(filters)
         files_to_read: list[str] = []
         for c, c_type in partition_columns.items():
             partition_files = conn.list_partition_files(c)
