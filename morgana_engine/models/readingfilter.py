@@ -17,6 +17,8 @@ class ReadingFilter(ABC):
     -----------
     tokens : list[Token]
         A list of tokens that represent the filter expression.
+    column_aliases : dict[str, str]
+        A mapping of column aliases to their full names.
     column : str | None
         The name of the column that the filter is applied to.
     operators : list[str] | None
@@ -25,9 +27,12 @@ class ReadingFilter(ABC):
         A list of values used in the filter expression.
     """
 
-    def __init__(self, tokens: list[Token]) -> None:
+    def __init__(
+        self, tokens: list[Token], column_aliases: dict[str, str]
+    ) -> None:
         super().__init__()
         self.tokens = tokens
+        self.column_aliases = column_aliases
         self._column: str | None = None
         self._operators: list[str] | None = None
         self._values: list[str] | None = None
@@ -58,6 +63,8 @@ class ReadingFilter(ABC):
             self._column = [t for t in self.tokens if type(t) is Identifier][
                 0
             ].get_real_name()
+            if self._column in self.column_aliases:
+                self._column = self.column_aliases[self._column]
         return self._column
 
     @property
@@ -140,9 +147,9 @@ class EqualityReadingFilter(ReadingFilter):
     def values(self) -> list[str]:
         if self._values is None:
             self._values = [
-                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][
-                    0
-                ].value
+                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][0]
+                .value.replace("'", "")
+                .replace('"', "")
             ]
         return self._values
 
@@ -205,9 +212,9 @@ class UnequalityReadingFilter(ReadingFilter):
     def values(self) -> list[str]:
         if self._values is None:
             self._values = [
-                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][
-                    0
-                ].value
+                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][0]
+                .value.replace("'", "")
+                .replace('"', "")
             ]
         return self._values
 
@@ -261,7 +268,10 @@ class InSetReadingFilter(ReadingFilter):
                 [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
-            self._values = [v.strip() for v in self._values]
+            self._values = [
+                v.strip().replace("'", "").replace('"', "")
+                for v in self._values
+            ]
         return self._values
 
     @classmethod
@@ -306,7 +316,10 @@ class NotInSetReadingFilter(ReadingFilter):
                 [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
-            self._values = [v.strip() for v in self._values]
+            self._values = [
+                v.strip().replace("'", "").replace('"', "")
+                for v in self._values
+            ]
 
         return self._values
 

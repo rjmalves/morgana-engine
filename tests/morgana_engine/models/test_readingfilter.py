@@ -12,9 +12,12 @@ import pytest
 class TestReadingFilter:
     tokens = query2tokens("SELECT * FROM table WHERE colname > 10")
     parsed_tokens = filter_spacing_tokens(tokens[-1].tokens[1:])[0].tokens
+    col_mapping = {None: "colname"}
 
     def test_column(self):
-        filter = ReadingFilter(TestReadingFilter.parsed_tokens)
+        filter = ReadingFilter(
+            TestReadingFilter.parsed_tokens, self.col_mapping
+        )
         assert filter.column == "colname"
 
     def test_eq(self):
@@ -23,9 +26,11 @@ class TestReadingFilter:
             parsed_tokens2 = filter_spacing_tokens(tokens2[-1].tokens[1:])[
                 0
             ].tokens
-            filter1 = ReadingFilter(TestReadingFilter.parsed_tokens)
+            filter1 = ReadingFilter(
+                TestReadingFilter.parsed_tokens, self.col_mapping
+            )
             tokens2 = query2tokens("SELECT * FROM table WHERE column < 5")
-            filter2 = ReadingFilter(parsed_tokens2)
+            filter2 = ReadingFilter(parsed_tokens2, {None: "column"})
             assert filter1 == filter1
             assert filter1 != filter2
 
@@ -35,7 +40,9 @@ class TestReadingFilter:
 
     def test_apply(self):
         with pytest.raises(NotImplementedError):
-            filter = ReadingFilter(TestReadingFilter.parsed_tokens)
+            filter = ReadingFilter(
+                TestReadingFilter.parsed_tokens, self.col_mapping
+            )
             values = [5, 10, 15, 20]
             casting_func = int
             filter.apply(values, casting_func)
@@ -50,6 +57,7 @@ class TestEqualityReadingFilter:
     parsed_diff_tokens = filter_spacing_tokens(diff_tokens[-1].tokens[1:])[
         0
     ].tokens
+    col_mapping = {None: "colname"}
 
     def test_is_filter(self):
         assert EqualityReadingFilter.is_filter(
@@ -61,29 +69,34 @@ class TestEqualityReadingFilter:
 
     def test_operators(self):
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_equal_tokens
+            TestEqualityReadingFilter.parsed_equal_tokens,
+            TestEqualityReadingFilter.col_mapping,
         )
         assert filter.operators == ["="]
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_diff_tokens
+            TestEqualityReadingFilter.parsed_diff_tokens,
+            TestEqualityReadingFilter.col_mapping,
         )
         assert filter.operators == ["!="]
 
     def test_values(self):
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_equal_tokens
+            TestEqualityReadingFilter.parsed_equal_tokens,
+            TestEqualityReadingFilter.col_mapping,
         )
         assert filter.values == ["10"]
 
     def test_apply(self):
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_equal_tokens
+            TestEqualityReadingFilter.parsed_equal_tokens,
+            TestEqualityReadingFilter.col_mapping,
         )
         values = [5, 10, 15, 20]
         casting_func = int
         assert filter.apply(values, casting_func) == [10]
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_diff_tokens
+            TestEqualityReadingFilter.parsed_diff_tokens,
+            TestEqualityReadingFilter.col_mapping,
         )
         values = [5, 10, 15, 20]
         casting_func = int
@@ -99,6 +112,7 @@ class TestUnequalityReadingFilter:
     parsed_reverse_le_tokens = filter_spacing_tokens(
         reverse_le_tokens[-1].tokens[1:]
     )[0].tokens
+    col_mapping = {None: "colname"}
 
     def test_is_filter(self):
         assert UnequalityReadingFilter.is_filter(
@@ -110,29 +124,34 @@ class TestUnequalityReadingFilter:
 
     def test_operators(self):
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens
+            TestUnequalityReadingFilter.parsed_direct_gt_tokens,
+            TestUnequalityReadingFilter.col_mapping,
         )
         assert filter.operators == [">"]
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_reverse_le_tokens
+            TestUnequalityReadingFilter.parsed_reverse_le_tokens,
+            TestUnequalityReadingFilter.col_mapping,
         )
         assert filter.operators == [">="]
 
     def test_values(self):
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens
+            TestUnequalityReadingFilter.parsed_direct_gt_tokens,
+            TestUnequalityReadingFilter.col_mapping,
         )
         assert filter.values == ["10"]
 
     def test_apply(self):
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens
+            TestUnequalityReadingFilter.parsed_direct_gt_tokens,
+            TestUnequalityReadingFilter.col_mapping,
         )
         values = [5, 10, 15, 20]
         casting_func = int
         assert filter.apply(values, casting_func) == [15, 20]
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_reverse_le_tokens
+            TestUnequalityReadingFilter.parsed_reverse_le_tokens,
+            TestUnequalityReadingFilter.col_mapping,
         )
         values = [5, 10, 15, 20]
         casting_func = int
@@ -142,6 +161,7 @@ class TestUnequalityReadingFilter:
 class TestInSetReadingFilter:
     tokens = query2tokens("SELECT * FROM table WHERE colname IN (10, 15)")
     parsed_tokens = filter_spacing_tokens(tokens[-1].tokens[1:])
+    col_mapping = {None: "colname"}
 
     def test_is_filter(self):
         assert InSetReadingFilter.is_filter(
@@ -149,15 +169,24 @@ class TestInSetReadingFilter:
         )
 
     def test_operators(self):
-        filter = InSetReadingFilter(TestInSetReadingFilter.parsed_tokens)
+        filter = InSetReadingFilter(
+            TestInSetReadingFilter.parsed_tokens,
+            TestInSetReadingFilter.col_mapping,
+        )
         assert filter.operators == ["IN"]
 
     def test_values(self):
-        filter = InSetReadingFilter(TestInSetReadingFilter.parsed_tokens)
+        filter = InSetReadingFilter(
+            TestInSetReadingFilter.parsed_tokens,
+            TestInSetReadingFilter.col_mapping,
+        )
         assert filter.values == ["10", "15"]
 
     def test_apply(self):
-        filter = InSetReadingFilter(TestInSetReadingFilter.parsed_tokens)
+        filter = InSetReadingFilter(
+            TestInSetReadingFilter.parsed_tokens,
+            TestInSetReadingFilter.col_mapping,
+        )
         values = [5, 10, 15, 20]
         casting_func = int
         assert filter.apply(values, casting_func) == [10, 15]
@@ -166,6 +195,7 @@ class TestInSetReadingFilter:
 class TestNotInSetReadingFilter:
     tokens = query2tokens("SELECT * FROM table WHERE colname NOT IN (10, 15)")
     parsed_tokens = filter_spacing_tokens(tokens[-1].tokens[1:])
+    col_mapping = {None: "colname"}
 
     def test_is_filter(self):
         assert NotInSetReadingFilter.is_filter(
@@ -173,15 +203,24 @@ class TestNotInSetReadingFilter:
         )
 
     def test_operators(self):
-        filter = NotInSetReadingFilter(TestNotInSetReadingFilter.parsed_tokens)
+        filter = NotInSetReadingFilter(
+            TestNotInSetReadingFilter.parsed_tokens,
+            TestNotInSetReadingFilter.col_mapping,
+        )
         assert filter.operators == ["NOT", "IN"]
 
     def test_values(self):
-        filter = NotInSetReadingFilter(TestNotInSetReadingFilter.parsed_tokens)
+        filter = NotInSetReadingFilter(
+            TestNotInSetReadingFilter.parsed_tokens,
+            TestNotInSetReadingFilter.col_mapping,
+        )
         assert filter.values == ["10", "15"]
 
     def test_apply(self):
-        filter = NotInSetReadingFilter(TestNotInSetReadingFilter.parsed_tokens)
+        filter = NotInSetReadingFilter(
+            TestNotInSetReadingFilter.parsed_tokens,
+            TestNotInSetReadingFilter.col_mapping,
+        )
         values = [5, 10, 15, 20]
         casting_func = int
         assert filter.apply(values, casting_func) == [5, 20]
