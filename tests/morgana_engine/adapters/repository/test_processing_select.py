@@ -224,7 +224,7 @@ class TestSELECT:
         process_result = SELECT.process(tokens[1:], conn)
         df = process_result["data"]
         expected_df = pd.read_parquet(
-            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
         )
         assert df.reset_index(drop=True).equals(
             expected_df.loc[
@@ -240,7 +240,7 @@ class TestSELECT:
         process_result = SELECT.process(tokens[1:], conn)
         df = process_result["data"]
         expected_df = pd.read_parquet(
-            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
         )
         assert df.reset_index(drop=True).equals(
             expected_df.loc[
@@ -256,7 +256,7 @@ class TestSELECT:
         process_result = SELECT.process(tokens[1:], conn)
         df = process_result["data"]
         expected_df = pd.read_parquet(
-            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
         )
         assert df.reset_index(drop=True).equals(
             expected_df.loc[
@@ -272,7 +272,7 @@ class TestSELECT:
         process_result = SELECT.process(tokens[1:], conn)
         df = process_result["data"]
         expected_df = pd.read_parquet(
-            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
         )
         assert df.reset_index(drop=True).equals(
             expected_df.loc[
@@ -288,7 +288,7 @@ class TestSELECT:
         process_result = SELECT.process(tokens[1:], conn)
         df = process_result["data"]
         expected_df = pd.read_parquet(
-            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1-.parquet.gzip",
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
         )
         assert df.reset_index(drop=True).equals(
             expected_df.loc[
@@ -430,7 +430,7 @@ class TestSELECT:
         assert len(process_result["processedFiles"]) == 1
         df = process_result["data"]
         expected_df = pd.read_parquet(
-            "tests/data/usinas_part_subsis/usinas_part_subsis-subsistema_geografico=NE-.parquet.gzip",
+            "tests/data/usinas_part_subsis/usinas_part_subsis-subsistema_geografico=NE.parquet.gzip",
         )
         expected_df = expected_df.rename(columns={"nome": "nome_usina"})
         expected_df["subsis"] = "NE"

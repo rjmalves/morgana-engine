@@ -437,6 +437,8 @@ class SELECT(Processing):
 
         """
 
+        table_name = conn.schema.name
+        table_format = conn.schema.file_type
         files_to_read: list[str] = []
         for c, c_type in partition_columns.items():
             partition_files = conn.list_partition_files(c)
@@ -444,7 +446,11 @@ class SELECT(Processing):
             # Builds a value: [files] map
             partition_maps: dict[Any, list[str]] = {}
             for partition_file in partition_files:
-                v = casting_func(partition_value_in_file(partition_file, c))
+                # Remove table name and extension from filename
+                parsed_filename = partition_file.lstrip(table_name).strip(
+                    table_format
+                )
+                v = casting_func(partition_value_in_file(parsed_filename, c))
                 if v in partition_maps:
                     partition_maps[v].append(partition_file)
                 else:
