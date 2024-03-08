@@ -13,7 +13,7 @@ def select_lambda_endpoint(
     if result["statusCode"] == 200:
         df = result["data"]
         f = BytesIO()
-        df.to_parquet(f, compression="gzip")
+        df.reset_index(drop=True).to_parquet(f, compression="gzip")
         f.seek(0)
         return {
             "statusCode": 200,
