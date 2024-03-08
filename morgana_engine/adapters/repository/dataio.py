@@ -1,5 +1,7 @@
 from abc import ABC
 import pandas as pd
+import pyarrow as pa  # type: ignore
+import pyarrow.parquet as pq  # type: ignore
 
 
 class DataIO(ABC):
@@ -41,7 +43,12 @@ class ParquetIO(DataIO):
 
     @classmethod
     def write(cls, df: pd.DataFrame, path: str, *args, **kwargs):
-        df.to_parquet(path, *args, **kwargs)
+        pq.write_table(
+            pa.Table.from_pandas(df),
+            path,
+            flavor="spark",
+            coerce_timestamps="ms",
+        )
 
 
 class ParquetGzipIO(DataIO):
@@ -53,9 +60,13 @@ class ParquetGzipIO(DataIO):
 
     @classmethod
     def write(cls, df: pd.DataFrame, path: str, *args, **kwargs):
-        if "compression" not in kwargs:
-            kwargs["compression"] = "gzip"
-        df.to_parquet(path, *args, **kwargs)
+        pq.write_table(
+            pa.Table.from_pandas(df),
+            path,
+            compression="gzip",
+            flavor="spark",
+            coerce_timestamps="ms",
+        )
 
 
 class CSVIO(DataIO):

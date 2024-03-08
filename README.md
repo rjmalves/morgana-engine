@@ -117,17 +117,17 @@ As an example, one of the tables might be described by:
         },
         {
             "name": "dia_previsao",
-            "type": "integer"
+            "type": "int"
         },
         {
             "name": "valor",
-            "type": "number"
+            "type": "float"
         }
     ],
     "partitions": [
         {
             "name": "quadricula",
-            "type": "integer"
+            "type": "int"
         }
     ]
 }
@@ -143,13 +143,13 @@ The supported file types are:
 The supported data types are:
 
 - `string`
-- `integer`
-- `number` (called `float` in most programming languages)
+- `int`
+- `float`
 - `bool`
 - `date`
 - `datetime`
 
-Currently, both `date` and `datetime` are handled by the same backend functions (TODO - implement different parsing backends). Only `string` and `integer` data types are supported for implementing partitions, where the `integer` is always the most recommended for performance improvements.
+Currently, both `date` and `datetime` are handled by the same backend functions, which are based on numpy's [datetime64](https://numpy.org/doc/stable/reference/arrays.datetime.html). Only `string` and `int` data types are supported for implementing partitions, where the `int` is always the most recommended for performance improvements.
 
 
 ### SQL Language Support
@@ -158,7 +158,7 @@ Currently the morgana only supports the SELECT statement from the SQL language, 
 
 When comparing datetime or date columns, no casting is made with respect to the format that is given. The date or datetime values for filters are expected to be in ISO 8601 format, with optional timezone information when the dataframe was written to the. For instance, datetime columns consider timezone information, so the desired filters must be given in the full format.
 
-Also, aliases are supported for column names and table names in queries using the `AS` keyword, with the exception being the column name on which a table is partitioned (TODO - support this feature). 
+Also, aliases are supported for column names and table names in queries using the `AS` keyword, which can also be applied to partition columns. In order to enable the proper execution of the WHERE filter, the partition columns must always be selected in order to optimize reading.
 
 Some query examples, given the same data schemas described above:
 

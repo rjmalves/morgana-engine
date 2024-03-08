@@ -1,7 +1,12 @@
 from abc import ABC
 from typing import TypeVar, Callable
 from sqlparse.sql import Token, Identifier, Parenthesis  # type: ignore
-from morgana_engine.utils.sql import filter_spacing_and_punctuation_tokens
+from morgana_engine.utils.sql import (
+    filter_spacing_and_punctuation_tokens,
+    column_from_token,
+)
+from morgana_engine.models.parsedsql import Table, Column
+
 
 T = TypeVar("T")
 
@@ -17,18 +22,19 @@ class ReadingFilter(ABC):
     -----------
     tokens : list[Token]
         A list of tokens that represent the filter expression.
-    column : str | None
-        The name of the column that the filter is applied to.
+    column : Column
+        The column that the filter is applied to.
     operators : list[str] | None
         A list of operators used in the filter expression.
     values : list[str] | None
         A list of values used in the filter expression.
     """
 
-    def __init__(self, tokens: list[Token]) -> None:
+    def __init__(self, tokens: list[Token], table: Table) -> None:
         super().__init__()
         self.tokens = tokens
-        self._column: str | None = None
+        self._table = table
+        self._column: Column | None = None
         self._operators: list[str] | None = None
         self._values: list[str] | None = None
 
@@ -45,19 +51,18 @@ class ReadingFilter(ABC):
             )
 
     @property
-    def column(self) -> str:
+    def column(self) -> Column:
         """
-        Returns the name of the column that the filter is applied to.
+        Returns the Column object that the filter is applied to.
 
         Returns:
         --------
-        str
-            The name of the column.
+        Column
+            The column object.
         """
         if self._column is None:
-            self._column = [t for t in self.tokens if type(t) is Identifier][
-                0
-            ].get_real_name()
+            token = [t for t in self.tokens if type(t) is Identifier][0]
+            self._column = column_from_token(token, [self._table])
         return self._column
 
     @property
@@ -140,9 +145,9 @@ class EqualityReadingFilter(ReadingFilter):
     def values(self) -> list[str]:
         if self._values is None:
             self._values = [
-                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][
-                    0
-                ].value
+                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][0]
+                .value.replace("'", "")
+                .replace('"', "")
             ]
         return self._values
 
@@ -205,9 +210,9 @@ class UnequalityReadingFilter(ReadingFilter):
     def values(self) -> list[str]:
         if self._values is None:
             self._values = [
-                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][
-                    0
-                ].value
+                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][0]
+                .value.replace("'", "")
+                .replace('"', "")
             ]
         return self._values
 
@@ -261,7 +266,10 @@ class InSetReadingFilter(ReadingFilter):
                 [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
-            self._values = [v.strip() for v in self._values]
+            self._values = [
+                v.strip().replace("'", "").replace('"', "")
+                for v in self._values
+            ]
         return self._values
 
     @classmethod
@@ -306,7 +314,10 @@ class NotInSetReadingFilter(ReadingFilter):
                 [t for t in self.tokens if type(t) is Parenthesis][0].tokens
             )
             self._values = collection[0].value.split(",")
-            self._values = [v.strip() for v in self._values]
+            self._values = [
+                v.strip().replace("'", "").replace('"', "")
+                for v in self._values
+            ]
 
         return self._values
 

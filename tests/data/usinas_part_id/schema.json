@@ -14,15 +14,15 @@
         },
         {
             "name": "capacidade_instalada",
-            "type": "number"
+            "type": "float"
         },
         {
             "name": "latitude",
-            "type": "number"
+            "type": "float"
         },
         {
             "name": "longitude",
-            "type": "number"
+            "type": "float"
         },
         {
             "name": "data_inicio_operacao",
@@ -44,7 +44,7 @@
     "partitions": [
         {
             "name": "id",
-            "type": "integer"
+            "type": "int"
         }
     ]
 }

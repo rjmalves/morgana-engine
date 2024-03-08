@@ -209,7 +209,6 @@ class S3Connection(Connection):
     @property
     def schema(self) -> Schema:
         if self._schema is None:
-            print("PATH:", join(self.path, "schema.json"))
             with self._s3.open(join(self.path, "schema.json"), "r") as file:
                 self._schema = Schema(json.load(file))
         return self._schema
@@ -232,7 +231,6 @@ class S3Connection(Connection):
         return files_with_column
 
     def access(self, table_name: str) -> "Connection":
-        print("Accessing")
         if not self.schema.is_database:
             raise ValueError(
                 f"Schema {self.uri} is not associated with a database"
