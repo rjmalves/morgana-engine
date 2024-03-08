@@ -19,16 +19,19 @@ from sqlparse.sql import (  # type: ignore
     Identifier,
     IdentifierList,
 )
-from typing import Any, Union
+from typing import Any, Union, Optional
 from os.path import join
 from morgana_engine.models.readingfilter import ReadingFilter
 from morgana_engine.utils.types import casting_functions
+from morgana_engine.models.parsedsql import Column, Table, QueryingFilter
 from morgana_engine.utils.sql import (
     partitions_in_file,
     partition_value_in_file,
 )
 from morgana_engine.utils.sql import (
-    column_name_with_alias,
+    column_from_token,
+    table_from_column_token,
+    add_column_information_from_token,
     filter_spacing_tokens,
     filter_punctuation_tokens,
     filter_spacing_and_punctuation_tokens,
@@ -98,10 +101,10 @@ class SELECT(Processing):
     """
 
     @classmethod
-    def _process_table_identifiers(cls, tokens: list[Token]) -> dict[str, str]:
+    def _process_table_identifiers(cls, tokens: list[Token]) -> list[Table]:
         """
         Processes the tokens associated with the tables identifiers in
-        order to obtain a map of alias: table_name.
+        order to obtain a list of tables that are related to the query.
 
         Parameters:
         -----------
@@ -111,9 +114,9 @@ class SELECT(Processing):
 
         Returns:
         --------
-        dict
-            The dataframe with the requested data or a dict with an
-            error code and message.
+        list[Table]
+            A list of Table objects with their names and aliases, but with
+            no column information up to this point.
 
         """
         # Iterate on tokens and find the table identifiers
@@ -121,52 +124,131 @@ class SELECT(Processing):
         alias_map: dict[str, str] = {
             t.get_alias(): t.get_real_name() for t in identifier_list
         }
-        return alias_map
+        return [
+            Table(name=v, alias=k, columns=[]) for k, v in alias_map.items()
+        ]
+
+    @classmethod
+    def _process_column_wildcard(
+        cls,
+        tables_to_select: list[Table],
+        conn: Connection,
+    ):
+        """
+        Accesses the schema data for filling all column information
+        since the select data is a wildcard.
+
+        Parameters:
+        -----------
+        tables_to_select : list[Table]
+            A list of tables that are related to the query.
+        conn : Connection
+            The connection to the database where the tables are located.
+
+        """
+        for table in tables_to_select:
+            table_conn = conn.access(table.name)
+            if not table_conn.schema.is_table:
+                raise ValueError(f"Schema {table.name} is not a table")
+            for (
+                column_name,
+                column_type,
+            ) in table_conn.schema.columns.items():
+                table.columns.append(
+                    Column(
+                        name=column_name,
+                        alias=None,
+                        type_str=column_type,
+                        table_name=table.name,
+                        table_alias=table.alias,
+                        has_parent_in_token=False,
+                        partition=False,
+                    )
+                )
+            for (
+                partition_name,
+                partition_type,
+            ) in table_conn.schema.partitions.items():
+                table.columns.append(
+                    Column(
+                        name=partition_name,
+                        alias=None,
+                        type_str=partition_type,
+                        table_name=table.name,
+                        table_alias=table.alias,
+                        has_parent_in_token=False,
+                        partition=True,
+                    )
+                )
 
     @classmethod
     def _process_column_identifiers(
-        cls, tokens: list[Token], tables_to_select: dict[str, str]
-    ) -> dict[str, dict[str, str]]:
+        cls,
+        tokens: list[Token],
+        tables_to_select: list[Table],
+        conn: Connection,
+    ):
         """
         Processes the tokens associated with the column identifiers in
-        order to obtain a map of table_alias: {column_alias: column_name}.
+        order to obtain a map of table_alias: {column_alias: column_name}
+        and add their information to the table list that was previously
+        parsed from the query.
 
         Parameters:
         -----------
         tokens :  list[Token]
             A list of tokens that were parsed from the query
-        tables_to_select : dict[str, str]
-            A mapping between table aliases and table names
-            for each table in the query.
-
-        Returns:
-        --------
-        dict[str, dict[str, str]]
-            A mapping between table aliases to a set of mappings of
-            column alias to column name.
+        tables_to_select : list[Table]
+            A list of tables that are related to the query.
+        conn : Connection
+            The connection to the database where the tables are located.
 
         """
-        # TODO - think about how to signal that a wildcard exists
         if "*" in [t.normalized for t in tokens]:
-            return {a: {} for a in tables_to_select.keys()}
-        identifier_list = [t for t in tokens if type(t) is IdentifierList][0]
-        identifier_tokens: list[Identifier] = [
-            t for t in identifier_list.tokens if type(t) is Identifier
-        ]
-        parents: list[str] = list(
-            set([t.get_parent_name() for t in identifier_tokens])
-        )
-        identifier_dict: dict[str, dict[str, str]] = {a: {} for a in parents}
-        for t in identifier_tokens:
-            identifier_dict[t.get_parent_name()][t.get_real_name()] = (
-                column_name_with_alias(t, tables_to_select)
-            )
-        return identifier_dict
+            cls._process_column_wildcard(tables_to_select, conn)
+        else:
+            # Else, iterate on tokens and find the column identifiers
+            identifier_list = [t for t in tokens if type(t) is IdentifierList][
+                0
+            ]
+            identifier_tokens: list[Identifier] = [
+                t for t in identifier_list.tokens if type(t) is Identifier
+            ]
+            # Adds the column information to the table list
+            for t in identifier_tokens:
+                add_column_information_from_token(t, tables_to_select)
+            # Adds data type information from the schemas
+            for table in tables_to_select:
+                table_conn = conn.access(table.name)
+                if not table_conn.schema.is_table:
+                    raise ValueError(f"Schema {table.name} is not a table")
+                for column in table.columns:
+                    column_schemas = list(
+                        filter(
+                            lambda column_pair: column_pair[0] == column.name,
+                            table_conn.schema.columns.items(),
+                        )
+                    )
+                    partition_schemas = list(
+                        filter(
+                            lambda partition_pair: partition_pair[0]
+                            == column.name,
+                            table_conn.schema.partitions.items(),
+                        )
+                    )
+                    if len(column_schemas) == 1:
+                        column.type_str = column_schemas[0][1]
+                        column.partition = False
+                    if len(partition_schemas) == 1:
+                        column.type_str = partition_schemas[0][1]
+                        column.partition = True
+
+        return tables_to_select
 
     @classmethod
     def _process_join_mappings(
-        cls, tokens: list[Token], tables_to_select: dict[str, str]
-    ) -> list[tuple[str, str]]:
+        cls, tokens: list[Token], tables_to_select: list[Table]
+    ) -> list[tuple[Column, Column]]:
         """
         Processes the tokens associated with the join mappings in order
         to obtain a map of each join type with the tables that must be joined.
@@ -175,19 +257,47 @@ class SELECT(Processing):
         -----------
         tokens :  list[Token]
             A list of tokens that were parsed from the query
-        tables_to_select : dict[str, str]
-            A mapping between table aliases and table names
-            for each table in the query.
+        tables_to_select : list[Table]
+            A list of tables that are related to the query.
 
         Returns:
         --------
-        list[tuple[str, str]]
+        list[tuple[Column, Column]]
             A list of tuples that define tables that must be joined,
             specifying the joining columns.
 
         """
+
+        def __find_column_by_token(
+            token: Identifier, columns: list[Column]
+        ) -> Optional[Column]:
+            for column in columns:
+                table_name_or_alias = token.get_parent_name()
+                table_match = (
+                    column.table_alias == table_name_or_alias
+                    or column.table_name == table_name_or_alias
+                )
+                column_name_or_alias = token.get_real_name()
+                column_match = (
+                    column.alias == column_name_or_alias
+                    or column.name == column_name_or_alias
+                )
+                if table_match and column_match:
+                    return column
+            return None
+
+        def __find_table_and_column_by_token(
+            token: Identifier, tables: list[Table]
+        ) -> Column:
+            all_columns = [c for t in tables for c in t.columns]
+            c = __find_column_by_token(token, all_columns)
+            if c:
+                return c
+
+            raise ValueError(f"Column {token.get_alias()} not found")
+
         comparison_tokens = [t for t in tokens if type(t) is Comparison]
-        mappings: list[tuple[str, str]] = []
+        mappings: list[tuple[Column, Column]] = []
         for c in comparison_tokens:
             identifiers = [
                 t
@@ -196,8 +306,12 @@ class SELECT(Processing):
             ]
             mappings.append(
                 (
-                    column_name_with_alias(identifiers[0], tables_to_select),
-                    column_name_with_alias(identifiers[1], tables_to_select),
+                    __find_table_and_column_by_token(
+                        identifiers[0], tables_to_select
+                    ),
+                    __find_table_and_column_by_token(
+                        identifiers[1], tables_to_select
+                    ),
                 )
             )
         return mappings
@@ -206,8 +320,8 @@ class SELECT(Processing):
     def _extract_reading_filters(
         cls,
         token_or_list: Token | list[Token],
-        columns_in_each_table: dict[str, dict[str, str]],
-    ) -> list[tuple[str, ReadingFilter]]:
+        tables_to_select: list[Table],
+    ) -> list[ReadingFilter]:
         """
         Processes the tokens after the WHERE for extracting filters
         for optimizing partition reading.
@@ -216,16 +330,14 @@ class SELECT(Processing):
         -----------
         token_or_list : Token | list[Token]
             A token or list of tokens that were parsed from the query
-        columns_in_each_table : dict[str, dict[str, str]]
-            A mapping between table aliases to a set of mappings
-            of column alias to column name.
+        tables_to_select : list[Table]
+            A list of tables that are related to the query.
 
         Returns:
         --------
-        list[tuple[str, ReadingFilter]]
-            A list of tuples with the table alias and the ReadingFilter
-            that should be applied to columns from that table. The default
-            table receives the `None` alias.
+        list[ReadingFilter]
+            A list of ReadingFilters that should be applied to the reading
+            process of each table. The default table receives the `None` alias.
 
         """
         if type(token_or_list) is Parenthesis:
@@ -235,7 +347,7 @@ class SELECT(Processing):
             filters = []
             for token_list in splitted_list:
                 filters += cls._extract_reading_filters(
-                    token_list, columns_in_each_table
+                    token_list, tables_to_select
                 )
             return filters
         elif type(token_or_list) is Comparison:
@@ -247,28 +359,18 @@ class SELECT(Processing):
             ]
             filter_type = readingfilter_factory(comparison_tokens)
             if filter_type:
-                table_alias = identifiers[0].get_parent_name()
-                return [
-                    (
-                        table_alias,
-                        filter_type(
-                            comparison_tokens,
-                            {
-                                v: k
-                                for k, v in columns_in_each_table[
-                                    table_alias
-                                ].items()
-                            },
-                        ),
-                    )
-                ]
+                # Find the table with the given alias
+                table = table_from_column_token(
+                    identifiers[0], tables_to_select
+                )
+                return [filter_type(comparison_tokens, table)]
         elif type(token_or_list) is list:
             # Second case of interest:
             # Belonging and Not Belonging to Set
             comparison_tokens = filter_spacing_tokens(token_or_list)
             if len(comparison_tokens) == 1:
                 return cls._extract_reading_filters(
-                    comparison_tokens[0], columns_in_each_table
+                    comparison_tokens[0], tables_to_select
                 )
             elif len(comparison_tokens) in [3, 4]:
                 identifiers = [
@@ -276,21 +378,11 @@ class SELECT(Processing):
                 ]
                 filter_type = readingfilter_factory(comparison_tokens)
                 if filter_type:
-                    table_alias = identifiers[0].get_parent_name()
-                    return [
-                        (
-                            table_alias,
-                            filter_type(
-                                comparison_tokens,
-                                {
-                                    v: k
-                                    for k, v in columns_in_each_table[
-                                        table_alias
-                                    ].items()
-                                },
-                            ),
-                        )
-                    ]
+                    # Find the table with the given alias
+                    table = table_from_column_token(
+                        identifiers[0], tables_to_select
+                    )
+                    return [filter_type(comparison_tokens, table)]
 
         return []
 
@@ -298,8 +390,8 @@ class SELECT(Processing):
     def _process_filters_for_reading(
         cls,
         tokens: list[Token],
-        columns_in_each_table: dict[str, dict[str, str]],
-    ) -> list[tuple[str, ReadingFilter]]:
+        tables_to_select: list[Table],
+    ) -> list[ReadingFilter]:
         """
         Filters the tokens after the WHERE that might help deciding which
         partition files must be read, optimizing reading time.
@@ -315,19 +407,16 @@ class SELECT(Processing):
         -----------
         tokens :  list[Token]
             A list of tokens that were parsed from the query
-        columns_in_each_table : dict[str, dict[str, str]]
-            A mapping between table aliases to a set of mappings
-            of column alias to column name.
+        tables_to_select : list[Table]
+            A list of tables that are related to the query.
 
         Returns:
         --------
-        list[tuple[str, ReadingFilter]]
-            A list of tuples with the table alias and the ReadingFilter
-            that should be applied to columns from that table. The default
-            table receives the `None` alias.
+        list[ReadingFilter]
+            A list of ReadingFilters that should be applied to the reading
+            process of each table. The default table receives the `None` alias.
 
         """
-
         where_tokens = [t for t in tokens if type(t) is Where]
         if len(where_tokens) > 0:
             splitted_tokens = split_token_list_in_and_or_keywords(
@@ -337,19 +426,17 @@ class SELECT(Processing):
             )
         else:
             splitted_tokens = []
-        filtermaps: list[tuple[str, ReadingFilter]] = []
+        filtermaps: list[ReadingFilter] = []
         for token_set in splitted_tokens:
-            t_map = cls._extract_reading_filters(
-                token_set, columns_in_each_table
-            )
+            t_map = cls._extract_reading_filters(token_set, tables_to_select)
             filtermaps += t_map
 
         return filtermaps
 
     @classmethod
     def _process_filters_for_querying(
-        cls, tokens: list[Token], tables_to_select: dict[str, str]
-    ) -> list[Union[tuple[str, str, str], str]]:
+        cls, tokens: list[Token], tables_to_select: list[Table]
+    ) -> list[Union[QueryingFilter, Column, str]]:
         """
         Filters the tokens after the WHERE that should be used for
         querying the DataFrame.
@@ -358,13 +445,12 @@ class SELECT(Processing):
         -----------
         tokens :  list[Token]
             A list of tokens that were parsed from the query
-        tables_to_select : dict[str, str]
-            A mapping between table aliases and table names
-            for each table in the query.
+        tables_to_select : list[Table]
+            A list of tables that are related to the query.
 
         Returns:
         --------
-        list[tuple[str, str, str] | str]
+        list[Union[QueryingFilter, Column, str]]
             A collection of elements that will be used to
             compose the query string (column_name, operator, value) or
             just a separator "&", "|" or "~".
@@ -373,7 +459,7 @@ class SELECT(Processing):
 
         def process_filters_to_pandas_query(
             token_or_list: Token | list[Token],
-        ) -> Union[tuple[str, str, str], str]:
+        ) -> Union[QueryingFilter, Column, str]:
             """
             Filters the tokens after the WHERE that should be used for
             querying the DataFrame.
@@ -385,9 +471,8 @@ class SELECT(Processing):
 
             Returns:
             --------
-            tuple[str, str, str] | str
-                An element or a tuple of elements that compose a
-                filter for the query string.
+            QueryingFilter | Column | str
+                An element that compose a filter for the query string.
 
             """
             logical_operator_mappings: dict[str, str] = {
@@ -406,11 +491,13 @@ class SELECT(Processing):
                     filter_spacing_tokens(token_or_list.tokens)
                 )
             elif type(token_or_list) is list:
-                return tuple(  # type: ignore
-                    [process_filters_to_pandas_query(t) for t in token_or_list]
-                )
+                elements = [
+                    process_filters_to_pandas_query(t) for t in token_or_list
+                ]
+                return QueryingFilter(*elements)  # type: ignore
+
             elif type(token_or_list) is Identifier:
-                return column_name_with_alias(token_or_list, tables_to_select)
+                return column_from_token(token_or_list, tables_to_select)
             elif type(token_or_list) is Token:
                 value = str(token_or_list.normalized)
                 return logical_operator_mappings.get(value, value)
@@ -439,10 +526,10 @@ class SELECT(Processing):
         to perform the correct casting, enabling the query string.
         """
         column_type_inference_function_map = {
-            "integer": is_integer,
-            "number": is_float,
+            "int": is_integer,
+            "float": is_float,
             "datetime": is_datetime,
-            "boolean": is_boolean,
+            "bool": is_boolean,
             "string": is_string,
         }
         for (
@@ -457,7 +544,7 @@ class SELECT(Processing):
     def _compose_query_and_query_dataframe(
         cls,
         df: pd.DataFrame,
-        parsed_filters: list[Union[str, tuple[str, str, str]]],
+        parsed_filters: list[Union[QueryingFilter, Column, str]],
     ) -> pd.DataFrame:
 
         def __cast_unquoting_value(value: str, column: str) -> Any:
@@ -467,19 +554,22 @@ class SELECT(Processing):
             )
             return casting_functions(casting_function_keyword)(unquoted_value)
 
-        casted_filter_values = []
-        query_string_parts = []
+        casted_filter_values: list[Any] = []
+        query_string_parts: list[str] = []
         num_filters = 0
         for f in parsed_filters:
-            if isinstance(f, tuple):
+            if isinstance(f, QueryingFilter):
                 query_string_part = (
-                    f"{f[0]} {f[1]} @casted_filter_values[{num_filters}]"
+                    f"{f.column.fullname} {f.operator}"
+                    + f" @casted_filter_values[{num_filters}]"
                 )
-                casted_filter_values.append(__cast_unquoting_value(f[2], f[0]))
+                casted_filter_values.append(
+                    __cast_unquoting_value(f.value, f.column.fullname)
+                )
                 query_string_parts.append(query_string_part)
                 num_filters += 1
             else:
-                query_string_parts.append(f)
+                query_string_parts.append(str(f))
         query_string = " ".join(query_string_parts)
         if num_filters > 0:
             # All filters have a (column, operator, value) format
@@ -540,7 +630,7 @@ class SELECT(Processing):
                 casting_func(v) for v in list(partition_maps.keys())
             ]
             # Apply filters
-            column_filters = [f for f in filters if f.column == c]
+            column_filters = [f for f in filters if f.column.name == c]
             if len(column_filters) == 0:
                 filtered_values = partition_values
             else:
@@ -560,11 +650,7 @@ class SELECT(Processing):
 
     @classmethod
     def _process_select_from_table(
-        cls,
-        table: str,
-        filters: list[ReadingFilter],
-        columns: dict[str, str],
-        conn: Connection,
+        cls, table: Table, filters: list[ReadingFilter], conn: Connection
     ) -> dict:
         """
         Processes the content of the SELECT statement with respect
@@ -573,15 +659,11 @@ class SELECT(Processing):
 
         Parameters:
         -----------
-        table :  str
-            The name of the table to be read.
+        table :  Table
+            The table object to be read.
         filters : list[ReadingFilter]
             A list of ReadingFilter objects that are associated with the
             table, for optimize partition reading.
-        columns : dict[str, str]
-            A mapping between column aliases and column names.
-        conn : Connection
-            The connection to the database where the table is located.
 
         Returns:
         --------
@@ -590,20 +672,23 @@ class SELECT(Processing):
             and some metadata regarding the reading process.
 
         """
-        table_conn = conn.access(table)
+        table_conn = conn.access(table.name)
         if not table_conn.schema.is_table:
             raise ValueError(f"Schema {table} is not a table")
         table_format = str(table_conn.schema.file_type)
         table_io = io_factory(table_format)
 
         # List partitioned columns from schema
-        partition_columns: dict[str, str] = table_conn.schema.partitions
 
+        columns: list[Column] = table.columns
+        column_mappings: dict[str, str] = {c.name: c.fullname for c in columns}
+
+        partition_columns: dict[str, str] = table_conn.schema.partitions
         # The main result is the list of filenames that must be read
         # and concatenated.
         files_to_read: list[str] = []
         if len(partition_columns) == 0:
-            files_to_read.append(table)
+            files_to_read.append(table.name)
         else:
             files_to_read += cls._read_files_with_partitions(
                 table_conn, partition_columns, filters
@@ -621,18 +706,11 @@ class SELECT(Processing):
                 casting_func = casting_functions(
                     table_conn.schema.partitions[k]
                 )
-                if k in columns.keys() or (len(columns) == 0):
+                if k in column_mappings.keys():
                     dff[k] = casting_func(v)
-            if len(columns) == 0:
-                dfs.append(dff.copy())
-            else:
-                dfs.append(dff[columns.keys()].copy())
+            dfs.append(dff[list(column_mappings.keys())].copy())
         df = pd.concat(dfs, ignore_index=True)
-        # Rename due columns
-        df.rename(
-            columns=columns,
-            inplace=True,
-        )
+
         # List non-partitioned columns from schema
         non_partitioned_columns: dict[str, str] = table_conn.schema.columns
         # Filters for the columns that have been queried
@@ -647,6 +725,9 @@ class SELECT(Processing):
             ]:
                 df[col] = pd.to_datetime(df[col])
 
+        # Rename due columns
+        df = df.rename(columns=column_mappings)
+
         return {
             "processedFiles": files_to_read,
             "data": df,
@@ -655,9 +736,8 @@ class SELECT(Processing):
     @classmethod
     def _process_select_from_tables(
         cls,
-        tables_to_select: dict[str, str],
-        reading_filters: list[tuple[str, ReadingFilter]],
-        columns_in_each_table: dict[str, dict[str, str]],
+        tables_to_select: list[Table],
+        reading_filters: list[ReadingFilter],
         conn: Connection,
     ) -> dict:
         """
@@ -672,11 +752,9 @@ class SELECT(Processing):
         reading_filters : list[tuple[str, ReadingFilter]]
             A mapping between table aliases and a list of ReadingFilter objects
             that are associated with each table.
-        columns_in_each_table : dict[str, dict[str, str]]
-            A mapping between column aliases and column names for each table
-            that must be read, with the table alias as key.
-        conn : Connection
+        conn: Connection
             The connection to the database where the tables are located.
+
 
         Returns:
         --------
@@ -687,11 +765,11 @@ class SELECT(Processing):
         """
         files: list[str] = []
         dfs: list[pd.DataFrame] = []
-        for alias, name in tables_to_select.items():
+        for table in tables_to_select:
+            name = table.name
             table_select_result = cls._process_select_from_table(
-                name,
-                [f[1] for f in reading_filters if f[0] == alias],
-                columns_in_each_table.get(alias, {}),
+                table,
+                [f for f in reading_filters if f.column.table_name == name],
                 conn,
             )
             files += table_select_result["processedFiles"]
@@ -705,7 +783,7 @@ class SELECT(Processing):
     def _process_join_tables(
         cls,
         dfs: list[pd.DataFrame],
-        table_join_mappings: list[tuple[str, str]],
+        table_join_mappings: list[tuple[Column, Column]],
     ) -> pd.DataFrame:
         """
         Processes the JOIN keywords in the query, joining the tables in the order
@@ -715,7 +793,7 @@ class SELECT(Processing):
         -----------
         dfs : list[pd.DataFrame]
             List of dataframes that were read from each table
-        table_join_mappings : list[tuple[str, str]]
+        table_join_mappings : list[tuple[Column, Column]]
             A mapping of table columns that should be joined.
 
         Returns:
@@ -728,10 +806,14 @@ class SELECT(Processing):
         if num_joins > 0:
             for i in range(num_joins):
                 df_left = dfs[i]
+                left_col = table_join_mappings[i][0]
                 df_right = dfs[i + 1]
-                df_right.set_index(table_join_mappings[i][1], inplace=True)
+                right_col = table_join_mappings[i][1]
+                df_right.set_index(right_col.fullname, inplace=True)
                 dfs[i + 1] = df_left.join(
-                    df_right, on=table_join_mappings[i][0], how="inner"
+                    df_right,
+                    on=left_col.fullname,
+                    how="inner",
                 )
             return dfs[-1]
         else:
@@ -767,20 +849,20 @@ class SELECT(Processing):
 
         """
         tables_to_select = cls._process_table_identifiers(tokens)
-        columns_in_each_table = cls._process_column_identifiers(
-            tokens, tables_to_select
+        tables_to_select = cls._process_column_identifiers(
+            tokens, tables_to_select, conn
         )
         table_join_mappings = cls._process_join_mappings(
             tokens, tables_to_select
         )
         reading_filters = cls._process_filters_for_reading(
-            tokens, columns_in_each_table
+            tokens, tables_to_select
         )
         querying_filters = cls._process_filters_for_querying(
             tokens, tables_to_select
         )
         select_result = cls._process_select_from_tables(
-            tables_to_select, reading_filters, columns_in_each_table, conn
+            tables_to_select, reading_filters, conn
         )
         df = cls._process_join_tables(
             select_result["data"], table_join_mappings

@@ -1,4 +1,5 @@
 import sqlparse  # type: ignore
+from morgana_engine.models.parsedsql import Column, Table
 from sqlparse.sql import Token, Identifier  # type: ignore
 from sqlparse.tokens import Newline, Whitespace, Punctuation  # type: ignore
 from typing import TypeVar
@@ -30,17 +31,67 @@ def query2tokens(query: str) -> list[Token]:
     return filter_spacing_tokens(statements[0].tokens)
 
 
-def column_name_with_alias(
-    token: Identifier, table_alias_map: dict[str, str]
-) -> str:
+def table_from_column_token(token: Identifier, tables: list[Table]) -> Table:
+    """
+    Extracts the table object associated with the token that refers to a
+    column.
+    """
+    # Find the table associated with the token
+    parent = token.get_parent_name()
+    if parent:
+        return list(filter(lambda t: t.alias == parent, tables))[0]
+    name = token.get_real_name()
+    for t in tables:
+        for c in t.columns:
+            if c.alias and c.alias == name:
+                return t
+        for c in t.columns:
+            if c.name == name:
+                return t
+
+    raise ValueError(f"Table not found for token {token}")
+
+
+def column_from_token(token: Identifier, tables: list[Table]) -> Column:
+    """
+    Extracts the column object associated with the token.
+    """
+    # Find the table associated with the token
+    table = table_from_column_token(token, tables)
+    # Find the column associated with the token
+    alias = token.get_alias()
+    name = token.get_real_name()
+    if alias:
+        column = list(filter(lambda c: c.alias == alias, table.columns))[0]
+    else:
+        # Needs to check if the token has a name, which is an alias
+        # of any column.
+        columns = list(filter(lambda c: c.name == name, table.columns))
+        if len(columns) == 0:
+            columns = list(filter(lambda c: c.alias == name, table.columns))
+        column = columns[0]
+
+    return column
+
+
+def add_column_information_from_token(
+    token: Identifier, table_alias_map: list[Table]
+):
     alias = token.get_alias()
     parent = token.get_parent_name()
-    if alias:
-        return alias
-    elif parent:
-        return f"{table_alias_map.get(parent, parent)}_{token.get_real_name()}"
-    else:
-        return token.get_real_name()
+    name = token.get_real_name()
+    table = list(filter(lambda t: t.alias == parent, table_alias_map))[0]
+    table.columns.append(
+        Column(
+            name=name,
+            alias=alias,
+            type_str=None,
+            table_name=table.name,
+            table_alias=table.alias,
+            has_parent_in_token=parent is not None,
+            partition=False,
+        )
+    )
 
 
 def split_token_list_in_and_or_keywords(

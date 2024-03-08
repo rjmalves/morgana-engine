@@ -1,7 +1,12 @@
 from abc import ABC
 from typing import TypeVar, Callable
 from sqlparse.sql import Token, Identifier, Parenthesis  # type: ignore
-from morgana_engine.utils.sql import filter_spacing_and_punctuation_tokens
+from morgana_engine.utils.sql import (
+    filter_spacing_and_punctuation_tokens,
+    column_from_token,
+)
+from morgana_engine.models.parsedsql import Table, Column
+
 
 T = TypeVar("T")
 
@@ -17,23 +22,19 @@ class ReadingFilter(ABC):
     -----------
     tokens : list[Token]
         A list of tokens that represent the filter expression.
-    column_aliases : dict[str, str]
-        A mapping of column aliases to their full names.
-    column : str | None
-        The name of the column that the filter is applied to.
+    column : Column
+        The column that the filter is applied to.
     operators : list[str] | None
         A list of operators used in the filter expression.
     values : list[str] | None
         A list of values used in the filter expression.
     """
 
-    def __init__(
-        self, tokens: list[Token], column_aliases: dict[str, str]
-    ) -> None:
+    def __init__(self, tokens: list[Token], table: Table) -> None:
         super().__init__()
         self.tokens = tokens
-        self.column_aliases = column_aliases
-        self._column: str | None = None
+        self._table = table
+        self._column: Column | None = None
         self._operators: list[str] | None = None
         self._values: list[str] | None = None
 
@@ -50,21 +51,18 @@ class ReadingFilter(ABC):
             )
 
     @property
-    def column(self) -> str:
+    def column(self) -> Column:
         """
-        Returns the name of the column that the filter is applied to.
+        Returns the Column object that the filter is applied to.
 
         Returns:
         --------
-        str
-            The name of the column.
+        Column
+            The column object.
         """
         if self._column is None:
-            self._column = [t for t in self.tokens if type(t) is Identifier][
-                0
-            ].get_real_name()
-            if self._column in self.column_aliases:
-                self._column = self.column_aliases[self._column]
+            token = [t for t in self.tokens if type(t) is Identifier][0]
+            self._column = column_from_token(token, [self._table])
         return self._column
 
     @property

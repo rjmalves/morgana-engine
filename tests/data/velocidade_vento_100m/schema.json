@@ -14,17 +14,17 @@
         },
         {
             "name": "dia_previsao",
-            "type": "integer"
+            "type": "int"
         },
         {
             "name": "valor",
-            "type": "number"
+            "type": "float"
         }
     ],
     "partitions": [
         {
             "name": "quadricula",
-            "type": "integer"
+            "type": "int"
         }
     ]
 }

@@ -15,8 +15,8 @@ def casting_functions(schema_type: str) -> Callable:
         to the specified schema type.
     """
     type_mappings: dict[str, Callable] = {
-        "integer": int,
-        "number": float,
+        "int": int,
+        "float": float,
         "string": str,
         "bool": bool,
         "date": date.fromisoformat,
