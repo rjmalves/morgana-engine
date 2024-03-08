@@ -5,6 +5,12 @@ from morgana_engine.models.readingfilter import (
     type_factory as readingfilter_factory,
 )
 import pandas as pd
+from pandas.api.types import is_datetime64_any_dtype as is_datetime
+from pandas.api.types import is_float_dtype as is_float
+from pandas.api.types import is_integer_dtype as is_integer
+from pandas.api.types import is_bool_dtype as is_boolean
+from pandas.api.types import is_string_dtype as is_string
+
 from sqlparse.sql import (  # type: ignore
     Token,
     Parenthesis,
@@ -13,7 +19,7 @@ from sqlparse.sql import (  # type: ignore
     Identifier,
     IdentifierList,
 )
-from typing import Any
+from typing import Any, Union
 from os.path import join
 from morgana_engine.models.readingfilter import ReadingFilter
 from morgana_engine.utils.types import casting_functions
@@ -343,7 +349,7 @@ class SELECT(Processing):
     @classmethod
     def _process_filters_for_querying(
         cls, tokens: list[Token], tables_to_select: dict[str, str]
-    ) -> str:
+    ) -> list[Union[tuple[str, str, str], str]]:
         """
         Filters the tokens after the WHERE that should be used for
         querying the DataFrame.
@@ -358,15 +364,32 @@ class SELECT(Processing):
 
         Returns:
         --------
-        str
-            A string in pandas-query format that should be used for
-            querying the DataFrame.
+        list[tuple[str, str, str] | str]
+            A collection of elements that will be used to
+            compose the query string (column_name, operator, value) or
+            just a separator "&", "|" or "~".
 
         """
 
         def process_filters_to_pandas_query(
             token_or_list: Token | list[Token],
-        ) -> str:
+        ) -> Union[tuple[str, str, str], str]:
+            """
+            Filters the tokens after the WHERE that should be used for
+            querying the DataFrame.
+
+            Parameters:
+            -----------
+            token_or_list :  Token | list[Token]
+                A token or list of tokens that were parsed from the query
+
+            Returns:
+            --------
+            tuple[str, str, str] | str
+                An element or a tuple of elements that compose a
+                filter for the query string.
+
+            """
             logical_operator_mappings: dict[str, str] = {
                 "=": "==",
                 "AND": "&",
@@ -383,8 +406,8 @@ class SELECT(Processing):
                     filter_spacing_tokens(token_or_list.tokens)
                 )
             elif type(token_or_list) is list:
-                return " ".join(
-                    process_filters_to_pandas_query(t) for t in token_or_list
+                return tuple(  # type: ignore
+                    [process_filters_to_pandas_query(t) for t in token_or_list]
                 )
             elif type(token_or_list) is Identifier:
                 return column_name_with_alias(token_or_list, tables_to_select)
@@ -404,9 +427,66 @@ class SELECT(Processing):
                 pandas_query_elements.append(
                     process_filters_to_pandas_query(t)
                 )
-            return " ".join(pandas_query_elements)
+            return pandas_query_elements
         else:
-            return ""
+            return []
+
+    @classmethod
+    def _dataframe_column_type_casting_keyword(cls, column: pd.Series) -> str:
+        """
+        Checks the column type among all supported data types in the DataFrame
+        and returns the keyword that should by used by the casting function
+        to perform the correct casting, enabling the query string.
+        """
+        column_type_inference_function_map = {
+            "integer": is_integer,
+            "number": is_float,
+            "datetime": is_datetime,
+            "boolean": is_boolean,
+            "string": is_string,
+        }
+        for (
+            typestring,
+            checking_function,
+        ) in column_type_inference_function_map.items():
+            if checking_function(column):
+                return typestring
+        return "string"
+
+    @classmethod
+    def _compose_query_and_query_dataframe(
+        cls,
+        df: pd.DataFrame,
+        parsed_filters: list[Union[str, tuple[str, str, str]]],
+    ) -> pd.DataFrame:
+
+        def __cast_unquoting_value(value: str, column: str) -> Any:
+            unquoted_value = value.replace("'", "").replace('"', "")
+            casting_function_keyword = (
+                cls._dataframe_column_type_casting_keyword(df[column])
+            )
+            return casting_functions(casting_function_keyword)(unquoted_value)
+
+        casted_filter_values = []
+        query_string_parts = []
+        num_filters = 0
+        for f in parsed_filters:
+            if isinstance(f, tuple):
+                query_string_part = (
+                    f"{f[0]} {f[1]} @casted_filter_values[{num_filters}]"
+                )
+                casted_filter_values.append(__cast_unquoting_value(f[2], f[0]))
+                query_string_parts.append(query_string_part)
+                num_filters += 1
+            else:
+                query_string_parts.append(f)
+        query_string = " ".join(query_string_parts)
+        if num_filters > 0:
+            # All filters have a (column, operator, value) format
+            df = df.query(query_string)
+            return df
+        else:
+            return df
 
     @classmethod
     def _read_files_with_partitions(
@@ -705,8 +785,9 @@ class SELECT(Processing):
         df = cls._process_join_tables(
             select_result["data"], table_join_mappings
         )
-        if querying_filters is not None:
-            df = df.query(querying_filters)
+        # The query string must be built here, referencing external
+        # variables with the correct types.
+        df = cls._compose_query_and_query_dataframe(df, querying_filters)
         return {
             "statusCode": 200,
             "data": df,

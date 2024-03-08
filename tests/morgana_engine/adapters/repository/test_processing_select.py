@@ -71,7 +71,7 @@ class TestSELECT:
         filters = SELECT._process_filters_for_querying(
             tokens, tables_to_select
         )
-        assert filters == "capacidade_instalada > 100"
+        assert filters == [("capacidade_instalada", ">", "100")]
 
     def test_process_select_from_table(self):
         conn = FSConnection("tests/data")
