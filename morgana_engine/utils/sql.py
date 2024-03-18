@@ -1,8 +1,8 @@
 import sqlparse  # type: ignore
 from morgana_engine.models.parsedsql import Column, Table
-from sqlparse.sql import Token, Identifier  # type: ignore
+from sqlparse.sql import Token, Identifier, Parenthesis, Comparison  # type: ignore
 from sqlparse.tokens import Newline, Whitespace, Punctuation  # type: ignore
-from typing import TypeVar
+from typing import TypeVar, Type, List
 
 T = TypeVar("T")
 
@@ -29,6 +29,69 @@ def filter_spacing_and_punctuation_tokens(tokens: list[Token]) -> list[Token]:
 def query2tokens(query: str) -> list[Token]:
     statements = sqlparse.parse(query)
     return filter_spacing_tokens(statements[0].tokens)
+
+
+def _check_types(tokens: list[Token], types: list[Type[Token]]) -> bool:
+    for i, token in enumerate(tokens):
+        if not isinstance(token, types[i]):
+            return False
+    return True
+
+
+def _match_token_types(
+    tokens: list[Token], types: list[Type[Token]]
+) -> List[List[int]]:
+    n_types = len(types)
+    grouping_indices = []
+    for i in range(len(tokens) - (n_types - 1)):
+        if _check_types(tokens[i : i + n_types], types):
+            grouping_indices.append(list(range(i, n_types)))
+    return grouping_indices
+
+
+def group_set_tokens_parentheses(tokens: list[Token]) -> list[list[Token]]:
+    """
+    Groups tokens that define IN or NOT IN operations in a single
+    comparison token.
+
+    Args:
+        tokens (list[Token]): The list of tokens to group.
+
+    Returns:
+        list[Token]: A list of grouped tokens, when the tokens are
+        separated by IN or NOT IN operations.
+    """
+    in_token_types = [Identifier, Token, Parenthesis]
+    n_in_tokens = len(in_token_types)
+    not_in_token_types = [Identifier, Token, Token, Parenthesis]
+    n_not_in_tokens = len(not_in_token_types)
+
+    in_grouping_indices = _match_token_types(tokens, in_token_types)
+    not_in_grouping_indices = _match_token_types(tokens, not_in_token_types)
+    # Groups 'IN' tokens
+    grouped_tokens = []
+    for i, t in enumerate(tokens):
+        found_in_group = False
+        for in_group in in_grouping_indices:
+            if i in in_group:
+                found_in_group = True
+                if i == in_group[0]:
+                    grouped_tokens.append(
+                        Comparison(tokens[i : i + n_in_tokens])
+                    )
+                break
+        for not_in_group in not_in_grouping_indices:
+            if i in not_in_group:
+                found_in_group = True
+                if i == not_in_group[0]:
+                    grouped_tokens.append(
+                        Comparison(tokens[i : i + n_not_in_tokens])
+                    )
+                break
+        if not found_in_group:
+            grouped_tokens.append(t)
+
+    return grouped_tokens
 
 
 def table_from_column_token(token: Identifier, tables: list[Table]) -> Table:

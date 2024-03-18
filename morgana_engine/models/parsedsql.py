@@ -62,3 +62,10 @@ class QueryingFilter:
     column: Column
     operator: str
     value: str
+
+    @property
+    def is_collection(self):
+        return "(" in self.value and ")" in self.value
+
+    def __repr__(self) -> str:
+        return f"{self.column.fullname} {self.operator} {self.value}"
