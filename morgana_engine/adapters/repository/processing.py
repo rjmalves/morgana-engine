@@ -36,6 +36,7 @@ from morgana_engine.utils.sql import (
     filter_punctuation_tokens,
     filter_spacing_and_punctuation_tokens,
     split_token_list_in_and_or_keywords,
+    group_set_tokens_parentheses,
 )
 
 
@@ -482,20 +483,32 @@ class SELECT(Processing):
                 "NOT": "not",
                 "IN": "in",
             }
-            if (
-                (type(token_or_list) is Parenthesis)
-                or (type(token_or_list) is IdentifierList)
-                or (type(token_or_list) is Comparison)
+            if (type(token_or_list) is Parenthesis) or (
+                type(token_or_list) is IdentifierList
             ):
                 return process_filters_to_pandas_query(
                     filter_spacing_tokens(token_or_list.tokens)
                 )
-            elif type(token_or_list) is list:
-                elements = [
-                    process_filters_to_pandas_query(t) for t in token_or_list
-                ]
-                return QueryingFilter(*elements)  # type: ignore
-
+            elif type(token_or_list) is Comparison:
+                comparison_tokens = token_or_list.tokens
+                col = column_from_token(comparison_tokens[0], tables_to_select)
+                operator_tokens = comparison_tokens[1:-1]
+                if len(operator_tokens) == 1:
+                    operator = logical_operator_mappings.get(
+                        operator_tokens[0].normalized,
+                        operator_tokens[0].normalized,
+                    )
+                else:
+                    operator = " ".join(
+                        [
+                            logical_operator_mappings.get(
+                                t.normalized, t.normalized
+                            )
+                            for t in operator_tokens
+                        ]
+                    )
+                value = comparison_tokens[-1].normalized
+                return QueryingFilter(col, operator, value)  # type: ignore
             elif type(token_or_list) is Identifier:
                 return column_from_token(token_or_list, tables_to_select)
             elif type(token_or_list) is Token:
@@ -510,7 +523,10 @@ class SELECT(Processing):
         filters = [t for t in tokens if type(t) is Where]
         if len(filters) > 0:
             pandas_query_elements = []
-            for t in filter_spacing_tokens(filters[0].tokens[1:]):
+            where_tokens = filter_spacing_tokens(filters[0].tokens[1:])
+            # Explicitly group IN operations
+            where_tokens = group_set_tokens_parentheses(where_tokens)
+            for t in where_tokens:
                 pandas_query_elements.append(
                     process_filters_to_pandas_query(t)
                 )
@@ -547,12 +563,29 @@ class SELECT(Processing):
         parsed_filters: list[Union[QueryingFilter, Column, str]],
     ) -> pd.DataFrame:
 
-        def __cast_unquoting_value(value: str, column: str) -> Any:
-            unquoted_value = value.replace("'", "").replace('"', "")
+        def __cast_unquoting_value(f: QueryingFilter) -> Any:
+            value = f.value
+            column = f.column.fullname
             casting_function_keyword = (
                 cls._dataframe_column_type_casting_keyword(df[column])
             )
-            return casting_functions(casting_function_keyword)(unquoted_value)
+            unquoted_value = value.replace("'", "").replace('"', "").strip()
+            if f.is_collection:
+                str_values = (
+                    unquoted_value.replace("(", "").replace(")", "").split(",")
+                )
+                return tuple(
+                    [
+                        casting_functions(casting_function_keyword)(v.strip())
+                        for v in str_values
+                        if len(v) > 0
+                    ]
+                )
+
+            else:
+                return casting_functions(casting_function_keyword)(
+                    unquoted_value
+                )
 
         casted_filter_values: list[Any] = []
         query_string_parts: list[str] = []
@@ -563,9 +596,7 @@ class SELECT(Processing):
                     f"{f.column.fullname} {f.operator}"
                     + f" @casted_filter_values[{num_filters}]"
                 )
-                casted_filter_values.append(
-                    __cast_unquoting_value(f.value, f.column.fullname)
-                )
+                casted_filter_values.append(__cast_unquoting_value(f))
                 query_string_parts.append(query_string_part)
                 num_filters += 1
             else:

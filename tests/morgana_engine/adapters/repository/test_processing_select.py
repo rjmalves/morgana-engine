@@ -199,7 +199,7 @@ class TestSELECT:
             tokens, tables_to_select
         )
         assert filters == [
-            QueryingFilter(tables_to_select[0].columns[-1], ">", "100")
+            QueryingFilter(tables_to_select[0].columns[-1], "  >  ", "100")
         ]
 
     def test_process_select_from_table(self):
@@ -428,7 +428,7 @@ class TestSELECT:
         assert df["nome"].equals(df["nome_up"])
         assert df["capacidade_instalada"].equals(df["capacidade_instalada_up"])
 
-    def test_process_where_integer_eq(self):
+    def test_process_where_float_eq(self):
         conn = FSConnection("tests/data")
         query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada = 30"
         tokens = query2tokens(query)
@@ -442,7 +442,7 @@ class TestSELECT:
             expected_df.loc[expected_df["capacidade_instalada"] == 30]
         )
 
-    def test_process_where_integer_gt(self):
+    def test_process_where_float_gt(self):
         conn = FSConnection("tests/data")
         query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada > 100"
         tokens = query2tokens(query)
@@ -456,7 +456,7 @@ class TestSELECT:
             expected_df.loc[expected_df["capacidade_instalada"] > 100]
         )
 
-    def test_process_where_integer_lt(self):
+    def test_process_where_float_lt(self):
         conn = FSConnection("tests/data")
         query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada < 100"
         tokens = query2tokens(query)
@@ -470,7 +470,7 @@ class TestSELECT:
             expected_df.loc[expected_df["capacidade_instalada"] < 100]
         )
 
-    def test_process_where_integer_ge(self):
+    def test_process_where_float_ge(self):
         conn = FSConnection("tests/data")
         query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada >= 100"
         tokens = query2tokens(query)
@@ -484,7 +484,7 @@ class TestSELECT:
             expected_df.loc[expected_df["capacidade_instalada"] >= 100]
         )
 
-    def test_process_where_integer_le(self):
+    def test_process_where_float_le(self):
         conn = FSConnection("tests/data")
         query = "SELECT id, codigo, nome, capacidade_instalada FROM usinas WHERE capacidade_instalada <= 100"
         tokens = query2tokens(query)
@@ -578,6 +578,77 @@ class TestSELECT:
             ].reset_index(drop=True)
         )
 
+    def test_process_where_datetime_in_single_value(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada IN ('2023-01-01T00:00:00+00:00')"
+        tokens = query2tokens(query)
+        process_result = SELECT.process(tokens[1:], conn)
+        df = process_result["data"]
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"].isin(
+                    [datetime(2023, 1, 1, tzinfo=pytz.utc)]
+                )
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_in_ending_comma(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada IN ('2023-01-01T00:00:00+00:00',)"
+        tokens = query2tokens(query)
+        process_result = SELECT.process(tokens[1:], conn)
+        df = process_result["data"]
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"].isin(
+                    [datetime(2023, 1, 1, tzinfo=pytz.utc)]
+                )
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_in_two_values(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada IN ('2023-01-01T00:00:00+00:00', '2023-01-02T00:00:00+00:00')"
+        tokens = query2tokens(query)
+        process_result = SELECT.process(tokens[1:], conn)
+        df = process_result["data"]
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                expected_df["data_rodada"].isin(
+                    [
+                        datetime(2023, 1, 1, tzinfo=pytz.utc),
+                        datetime(2023, 1, 2, tzinfo=pytz.utc),
+                    ]
+                )
+            ].reset_index(drop=True)
+        )
+
+    def test_process_where_datetime_not_in_single_value(self):
+        conn = FSConnection("tests/data")
+        query = "SELECT * FROM velocidade_vento_100m WHERE data_rodada NOT IN ('2023-01-01T00:00:00+00:00')"
+        tokens = query2tokens(query)
+        process_result = SELECT.process(tokens[1:], conn)
+        df = process_result["data"]
+        expected_df = pd.read_parquet(
+            "tests/data/velocidade_vento_100m/velocidade_vento_100m-quadricula=1.parquet.gzip",
+        )
+        assert df.reset_index(drop=True).equals(
+            expected_df.loc[
+                ~expected_df["data_rodada"].isin(
+                    [datetime(2023, 1, 1, tzinfo=pytz.utc)]
+                )
+            ].reset_index(drop=True)
+        )
+
     def test_process_where_date_eq(self):
         conn = FSConnection("tests/data")
         query = (
@@ -598,8 +669,9 @@ class TestSELECT:
 
         assert df.reset_index(drop=True).equals(
             expected_df.loc[
-                expected_df["data_inicio_operacao"]
-                == datetime.fromisoformat("2009-08-26")
+                expected_df["data_inicio_operacao"].isin(
+                    [datetime.fromisoformat("2009-08-26")]
+                )
             ].reset_index(drop=True)
         )
 
