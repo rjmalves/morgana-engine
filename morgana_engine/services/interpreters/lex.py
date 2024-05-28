@@ -34,6 +34,6 @@ class SQLLexer:
         return result
 
 
-def lex(query: str) -> List[SQLToken]:
+def lex(query: str) -> SQLStatement:
     q = query.strip().replace("\n", "")
     return SQLStatement(SQLLexer._recursive_lex(q))

@@ -29,6 +29,17 @@ from typing import Optional, Union, List, Tuple, Any
 
 class SELECTParser(SQLParser):
 
+    def __init__(self, statement: SQLStatement, conn: Connection):
+        super().__init__(statement, conn)
+        self.__tables: List[Table] = []
+        self.__select_index: int = -1
+        self.__from_index: int = -1
+        self.__where_index: int = -1
+        self.__filtered: bool = False
+        self.__joining_columns: List[Tuple[Column, Column, str]] = []
+        self.__reading_filters: List[ReadingFilter] = []
+        self.__querying_filters: List[Union[QueryingFilter, str]] = []
+
     @staticmethod
     def match_statement(statement: SQLStatement) -> bool:
         return statement.tokens[0].type == SQLTokenType.SELECT
@@ -42,6 +53,7 @@ class SELECTParser(SQLParser):
             return ParsingResult(
                 status=False,
                 message="The statement must contain 1 SELECT",
+                data=None,
             )
         from_tokens = list(
             filter(lambda t: t.type == SQLTokenType.FROM, tokens)
@@ -84,7 +96,7 @@ class SELECTParser(SQLParser):
             )
         self.__filtered = len(where_tokens) == 1
         self.__where_index = (
-            tokens.index(where_tokens[0]) if self.__filtered else None
+            tokens.index(where_tokens[0]) if self.__filtered else -1
         )
         if self.__filtered:
             last_index = len(tokens)
@@ -117,9 +129,6 @@ class SELECTParser(SQLParser):
 
     def __get_querying_tables(self) -> Optional[ParsingResult]:
 
-        self.tables: List[Table] = []
-        # Gets tokens between FROM and WHERE (or the end)
-        # for considering as columns
         last_index = (
             self.__where_index
             if self.__filtered
@@ -144,17 +153,14 @@ class SELECTParser(SQLParser):
                     else None
                 )
 
-                self.tables.append(
+                self.__tables.append(
                     Table(name=table_name, alias=table_alias, columns=[])
                 )
 
-        # TODO - maybe needs to parse for "ON" and "JOIN" tokens
-        # for supporting the case where the tables don't have
-        # aliases
         return None
 
     def __get_schema_elements(self) -> Optional[ParsingResult]:
-        for table in self.tables:
+        for table in self.__tables:
             table_conn = self.conn.access(table.name)
             if not table_conn.schema.is_table:
                 return ParsingResult(
@@ -194,6 +200,7 @@ class SELECTParser(SQLParser):
                         querying=False,
                     )
                 )
+        return None
 
     def __get_table_from_token_list(
         self, name_or_alias: str
@@ -202,7 +209,7 @@ class SELECTParser(SQLParser):
         tables = list(
             filter(
                 lambda t: t.name == name_or_alias or t.alias == name_or_alias,
-                self.tables,
+                self.__tables,
             )
         )
         if len(tables) != 1:
@@ -229,7 +236,7 @@ class SELECTParser(SQLParser):
             if isinstance(table, ParsingResult):
                 return table
         else:
-            table = self.tables[0]
+            table = self.__tables[0]
             column_name = columns_with_table[0][0].text
             has_parent_in_token = False
 
@@ -274,7 +281,6 @@ class SELECTParser(SQLParser):
 
     def __get_joining_columns(self) -> Optional[ParsingResult]:
 
-        self.joining_columns: List[Tuple[Column, Column, str]] = []
         last_index = (
             self.__where_index
             if self.__filtered
@@ -312,125 +318,132 @@ class SELECTParser(SQLParser):
             joining_column_tokens = self.__split_by_token_type(
                 on_tokens, SQLTokenType.EQUALS
             )
-            columns = [
-                self.__get_column_from_token_list(column_tokens)
-                for column_tokens in joining_column_tokens
-            ] + [join_kind_token.text.lower()]
-            self.joining_columns.append(tuple(columns))
+            columns: List[Column] = []
+            for column_tokens in joining_column_tokens:
+                column = self.__get_column_from_token_list(column_tokens)
+                if isinstance(column, ParsingResult):
+                    return column
+                columns.append(column)
+            column_tuple = (
+                columns[0],
+                columns[1],
+                join_kind_token.text.lower(),
+            )
+            self.__joining_columns.append(column_tuple)
 
         return None
 
     def __filter_querying_columns(self) -> Optional[ParsingResult]:
-        for table in self.tables:
+        for table in self.__tables:
             table.columns = list(filter(lambda c: c.querying, table.columns))
+
+        return None
+
+    def __recursive_get_reading_filters(
+        self, tokens: List[SQLToken], context_depths: np.ndarray
+    ) -> Union[Tuple[List[SQLToken], np.ndarray], ParsingResult]:
+        # Get deepest context and extract tokens
+        max_context_depth = max(context_depths)
+        indices = np.where(context_depths == max_context_depth)[0]
+        internal_tokens: List[SQLToken] = [tokens[i] for i in indices]
+        initial_index = indices[0]
+        final_index = indices[-1]
+        before_tokens, before_depths = (
+            tokens[:initial_index],
+            context_depths[:initial_index],
+        )
+        after_tokens, after_depths = (
+            tokens[final_index + 1 :],
+            context_depths[final_index + 1 :],
+        )
+        if SQLTokenType.LPAREN in [t.type for t in internal_tokens]:
+            initial_index += 1
+            internal_tokens = internal_tokens[1:]
+        if SQLTokenType.RPAREN in [t.type for t in internal_tokens]:
+            final_index -= 1
+            internal_tokens = internal_tokens[:-1]
+
+        if all(
+            [
+                t.type in [SQLTokenType.ENTITY, SQLTokenType.COMMA]
+                for t in internal_tokens
+            ]
+            + [len(tokens) > 0]
+        ):
+            # If there are only entities and commas, it is a list
+            # of values.
+            value_list_token = SQLToken(
+                SQLTokenType.ENTITY,
+                text=" ".join([t.text for t in internal_tokens]),
+            )
+            tokens_to_add = [value_list_token]
+            depths_to_add = np.array(
+                [max_context_depth - 1] * len(tokens_to_add), dtype=int
+            )
+        else:
+            tokens_to_add = []
+            depths_to_add = np.array([])
+            # Split be AND and OR operators
+            subfilters = self.__split_by_token_type(
+                internal_tokens, [SQLTokenType.AND, SQLTokenType.OR]
+            )
+            # Create each reading filter
+            for f in subfilters:
+                operation = list(
+                    filter(
+                        lambda t: t.type in OPERATION_TOKEN_TYPES,
+                        f,
+                    )
+                )
+                if len(operation) == 0:
+                    return ParsingResult(
+                        status=False,
+                        message="No operation found in filter"
+                        + f" {[str(t) for t in f]}",
+                        data=None,
+                    )
+                else:
+                    column_tokens = f[: f.index(operation[0])]
+                    value_tokens = f[f.index(operation[-1]) + 1 :]
+                    if len(operation) == 2:
+                        if not all(
+                            [
+                                t.type
+                                in [
+                                    SQLTokenType.NOT,
+                                    SQLTokenType.IN,
+                                ]
+                                for t in operation
+                            ]
+                        ):
+                            return ParsingResult(
+                                status=False,
+                                message="Invalid operation found in filter"
+                                + f" {[str(t) for t in operation]}",
+                                data=None,
+                            )
+                        else:
+                            operation = [
+                                SQLToken(SQLTokenType.NOT_IN, text="NOT IN")
+                            ]
+                column_or_result = self.__get_column_from_token_list(
+                    column_tokens
+                )
+                if isinstance(column_or_result, ParsingResult):
+                    return column_or_result
+                else:
+                    column = column_or_result
+                reading_filter_type = type_factory(operation[0])
+                r = reading_filter_type(column, operation[0], value_tokens)
+                self.__reading_filters.append(r)
+
+        return (
+            before_tokens + tokens_to_add + after_tokens,
+            np.concatenate([before_depths, depths_to_add, after_depths]),
+        )
 
     def __get_reading_filters(self) -> Optional[ParsingResult]:
 
-        def __recursive_get_reading_filters(
-            tokens: List[SQLToken], context_depths: np.ndarray
-        ) -> Union[Tuple[List[SQLToken], np.ndarray], ParsingResult]:
-            # Get deepest context and extract tokens
-            max_context_depth = max(context_depths)
-            indices = np.where(context_depths == max_context_depth)[0]
-            internal_tokens: List[SQLToken] = [tokens[i] for i in indices]
-            initial_index = indices[0]
-            final_index = indices[-1]
-            before_tokens, before_depths = (
-                tokens[:initial_index],
-                context_depths[:initial_index],
-            )
-            after_tokens, after_depths = (
-                tokens[final_index + 1 :],
-                context_depths[final_index + 1 :],
-            )
-            if SQLTokenType.LPAREN in [t.type for t in internal_tokens]:
-                initial_index += 1
-                internal_tokens = internal_tokens[1:]
-            if SQLTokenType.RPAREN in [t.type for t in internal_tokens]:
-                final_index -= 1
-                internal_tokens = internal_tokens[:-1]
-
-            if all(
-                [
-                    t.type in [SQLTokenType.ENTITY, SQLTokenType.COMMA]
-                    for t in internal_tokens
-                ]
-                + [len(tokens) > 0]
-            ):
-                # If there are only entities and commas, it is a list
-                # of values.
-                value_list_token = SQLToken(
-                    SQLTokenType.ENTITY,
-                    text=" ".join([t.text for t in internal_tokens]),
-                )
-                tokens_to_add = [value_list_token]
-                depths_to_add = np.array(
-                    [max_context_depth - 1] * len(tokens_to_add), dtype=int
-                )
-            else:
-                tokens_to_add = []
-                depths_to_add = []
-                # Split be AND and OR operators
-                subfilters = self.__split_by_token_type(
-                    internal_tokens, [SQLTokenType.AND, SQLTokenType.OR]
-                )
-                # Create each reading filter
-                for f in subfilters:
-                    operation = list(
-                        filter(
-                            lambda t: t.type in OPERATION_TOKEN_TYPES,
-                            f,
-                        )
-                    )
-                    if len(operation) == 0:
-                        return ParsingResult(
-                            status=False,
-                            message="No operation found in filter"
-                            + f" {[str(t) for t in f]}",
-                            data=None,
-                        )
-                    else:
-                        column_tokens = f[: f.index(operation[0])]
-                        value_tokens = f[f.index(operation[-1]) + 1 :]
-                        if len(operation) == 2:
-                            if not all(
-                                [
-                                    t.type
-                                    in [
-                                        SQLTokenType.NOT,
-                                        SQLTokenType.IN,
-                                    ]
-                                    for t in operation
-                                ]
-                            ):
-                                return ParsingResult(
-                                    status=False,
-                                    message="Invalid operation found in filter"
-                                    + f" {[str(t) for t in operation]}",
-                                    data=None,
-                                )
-                            else:
-                                operation = [
-                                    SQLToken(
-                                        SQLTokenType.NOT_IN, text="NOT IN"
-                                    )
-                                ]
-                    column_or_result = self.__get_column_from_token_list(
-                        column_tokens
-                    )
-                    if isinstance(column_or_result, ParsingResult):
-                        return column_or_result
-                    else:
-                        column = column_or_result
-                    reading_filter_type = type_factory(operation[0])
-                    r = reading_filter_type(column, operation[0], value_tokens)
-                    self.reading_filters.append(r)
-
-            return (
-                before_tokens + tokens_to_add + after_tokens,
-                np.concatenate([before_depths, depths_to_add, after_depths]),
-            )
-
         def __add_token_context_depths(tokens: List[SQLToken]) -> np.ndarray:
             context_depths: np.ndarray = np.zeros_like(tokens, dtype=int)
             current_context = 0
@@ -449,149 +462,147 @@ class SELECTParser(SQLParser):
         # inner contexts with single tokens whenever possible
         # and creating the reading filters
 
-        self.reading_filters: List[ReadingFilter] = []
         while len(tokens) > 0:
-            r = __recursive_get_reading_filters(tokens, context_depths)
+            r = self.__recursive_get_reading_filters(tokens, context_depths)
             if isinstance(r, ParsingResult):
                 return r
             else:
                 tokens, context_depths = r
+        return None
+
+    def __recursive_get_querying_filters(
+        self, tokens: List[SQLToken], context_depths: np.ndarray
+    ) -> Union[Tuple[List[SQLToken], np.ndarray], ParsingResult]:
+        # Get deepest context and extract tokens
+        max_context_depth = max(context_depths)
+        indices = np.where(context_depths == max_context_depth)[0]
+        internal_tokens: List[SQLToken] = [tokens[i] for i in indices]
+        initial_index = indices[0]
+        final_index = indices[-1]
+        before_tokens, before_depths = (
+            tokens[:initial_index],
+            context_depths[:initial_index],
+        )
+        after_tokens, after_depths = (
+            tokens[final_index + 1 :],
+            context_depths[final_index + 1 :],
+        )
+        if SQLTokenType.LPAREN in [t.type for t in internal_tokens]:
+            initial_index += 1
+            internal_tokens = internal_tokens[1:]
+        if SQLTokenType.RPAREN in [t.type for t in internal_tokens]:
+            final_index -= 1
+            internal_tokens = internal_tokens[:-1]
+
+        if all(
+            [
+                t.type in [SQLTokenType.ENTITY, SQLTokenType.COMMA]
+                for t in internal_tokens
+            ]
+            + [len(tokens) > 0]
+        ):
+            # If there are only entities and commas, it is a list
+            # of values.
+            value_list_token = SQLToken(
+                SQLTokenType.ENTITY,
+                text=" ".join([t.text for t in internal_tokens]),
+            )
+            tokens_to_add = [value_list_token]
+            depths_to_add = np.array(
+                [max_context_depth - 1] * len(tokens_to_add), dtype=int
+            )
+        else:
+            tokens_to_add = []
+            depths_to_add = np.array([])
+            # Split be AND and OR operators
+            subfilters = self.__split_by_token_type(
+                internal_tokens, [SQLTokenType.AND, SQLTokenType.OR]
+            )
+            filter_delimiters = [
+                t
+                for t in internal_tokens
+                if t.type in [SQLTokenType.AND, SQLTokenType.OR]
+            ]
+            # Create each reading filter
+            for i, f in enumerate(subfilters):
+                operation = list(
+                    filter(
+                        lambda t: t.type in OPERATION_TOKEN_TYPES,
+                        f,
+                    )
+                )
+                if len(operation) == 0:
+                    return ParsingResult(
+                        status=False,
+                        message="No operation found in filter"
+                        + f" {[str(t) for t in f]}",
+                        data=None,
+                    )
+                else:
+                    column_tokens = f[: f.index(operation[0])]
+                    value_tokens = f[f.index(operation[-1]) + 1 :]
+                    if len(operation) == 2:
+                        if not all(
+                            [
+                                t.type
+                                in [
+                                    SQLTokenType.NOT,
+                                    SQLTokenType.IN,
+                                ]
+                                for t in operation
+                            ]
+                        ):
+                            return ParsingResult(
+                                status=False,
+                                message="Invalid operation found in filter"
+                                + f" {[str(t) for t in operation]}",
+                                data=None,
+                            )
+                        else:
+                            operation = [
+                                SQLToken(SQLTokenType.NOT_IN, text="NOT IN")
+                            ]
+                column_or_result = self.__get_column_from_token_list(
+                    column_tokens
+                )
+                if isinstance(column_or_result, ParsingResult):
+                    return column_or_result
+                else:
+                    column = column_or_result
+                logical_operator_mappings: dict[str, str] = {
+                    "=": "==",
+                    "AND": "&",
+                    "OR": "|",
+                    "NOT IN": "not in",
+                    "IN": "in",
+                }
+                operation_token = operation[0]
+                operator = logical_operator_mappings.get(
+                    operation_token.text,
+                    operation_token.text,
+                )
+                value_str = (
+                    "(" + value_tokens[0].text + ")"
+                    if operation_token.type
+                    in [SQLTokenType.IN, SQLTokenType.NOT_IN]
+                    else value_tokens[0].text
+                )
+                q = QueryingFilter(column, operator, value_str)
+                self.__querying_filters.append(q)
+                if i < len(filter_delimiters):
+                    delimiter = logical_operator_mappings.get(
+                        filter_delimiters[i].text,
+                        filter_delimiters[i].text,
+                    )
+                    self.__querying_filters.append(delimiter)
+
+        return (
+            before_tokens + tokens_to_add + after_tokens,
+            np.concatenate([before_depths, depths_to_add, after_depths]),
+        )
 
     def __get_querying_filters(self) -> Optional[ParsingResult]:
 
-        def __recursive_get_querying_filters(
-            tokens: List[SQLToken], context_depths: np.ndarray
-        ) -> Union[Tuple[List[SQLToken], np.ndarray], ParsingResult]:
-            # Get deepest context and extract tokens
-            max_context_depth = max(context_depths)
-            indices = np.where(context_depths == max_context_depth)[0]
-            internal_tokens: List[SQLToken] = [tokens[i] for i in indices]
-            initial_index = indices[0]
-            final_index = indices[-1]
-            before_tokens, before_depths = (
-                tokens[:initial_index],
-                context_depths[:initial_index],
-            )
-            after_tokens, after_depths = (
-                tokens[final_index + 1 :],
-                context_depths[final_index + 1 :],
-            )
-            if SQLTokenType.LPAREN in [t.type for t in internal_tokens]:
-                initial_index += 1
-                internal_tokens = internal_tokens[1:]
-            if SQLTokenType.RPAREN in [t.type for t in internal_tokens]:
-                final_index -= 1
-                internal_tokens = internal_tokens[:-1]
-
-            if all(
-                [
-                    t.type in [SQLTokenType.ENTITY, SQLTokenType.COMMA]
-                    for t in internal_tokens
-                ]
-                + [len(tokens) > 0]
-            ):
-                # If there are only entities and commas, it is a list
-                # of values.
-                value_list_token = SQLToken(
-                    SQLTokenType.ENTITY,
-                    text=" ".join([t.text for t in internal_tokens]),
-                )
-                tokens_to_add = [value_list_token]
-                depths_to_add = np.array(
-                    [max_context_depth - 1] * len(tokens_to_add), dtype=int
-                )
-            else:
-                tokens_to_add = []
-                depths_to_add = []
-                # Split be AND and OR operators
-                subfilters = self.__split_by_token_type(
-                    internal_tokens, [SQLTokenType.AND, SQLTokenType.OR]
-                )
-                filter_delimiters = [
-                    t
-                    for t in internal_tokens
-                    if t.type in [SQLTokenType.AND, SQLTokenType.OR]
-                ]
-                # Create each reading filter
-                for i, f in enumerate(subfilters):
-                    operation = list(
-                        filter(
-                            lambda t: t.type in OPERATION_TOKEN_TYPES,
-                            f,
-                        )
-                    )
-                    if len(operation) == 0:
-                        return ParsingResult(
-                            status=False,
-                            message="No operation found in filter"
-                            + f" {[str(t) for t in f]}",
-                            data=None,
-                        )
-                    else:
-                        column_tokens = f[: f.index(operation[0])]
-                        value_tokens = f[f.index(operation[-1]) + 1 :]
-                        if len(operation) == 2:
-                            if not all(
-                                [
-                                    t.type
-                                    in [
-                                        SQLTokenType.NOT,
-                                        SQLTokenType.IN,
-                                    ]
-                                    for t in operation
-                                ]
-                            ):
-                                return ParsingResult(
-                                    status=False,
-                                    message="Invalid operation found in filter"
-                                    + f" {[str(t) for t in operation]}",
-                                    data=None,
-                                )
-                            else:
-                                operation = [
-                                    SQLToken(
-                                        SQLTokenType.NOT_IN, text="NOT IN"
-                                    )
-                                ]
-                    column_or_result = self.__get_column_from_token_list(
-                        column_tokens
-                    )
-                    if isinstance(column_or_result, ParsingResult):
-                        return column_or_result
-                    else:
-                        column = column_or_result
-                    logical_operator_mappings: dict[str, str] = {
-                        "=": "==",
-                        "AND": "&",
-                        "OR": "|",
-                        "NOT IN": "not in",
-                        "IN": "in",
-                    }
-                    operation_token = operation[0]
-                    operator = logical_operator_mappings.get(
-                        operation_token.text,
-                        operation_token.text,
-                    )
-                    value_str = (
-                        "(" + value_tokens[0].text + ")"
-                        if operation_token.type
-                        in [SQLTokenType.IN, SQLTokenType.NOT_IN]
-                        else value_tokens[0].text
-                    )
-                    q = QueryingFilter(column, operator, value_str)
-                    self.querying_filters.append(q)
-                    if i < len(filter_delimiters):
-                        delimiter = logical_operator_mappings.get(
-                            filter_delimiters[i].text,
-                            filter_delimiters[i].text,
-                        )
-                        self.querying_filters.append(delimiter)
-
-            return (
-                before_tokens + tokens_to_add + after_tokens,
-                np.concatenate([before_depths, depths_to_add, after_depths]),
-            )
-
         def __add_token_context_depths(tokens: List[SQLToken]) -> np.ndarray:
             context_depths: np.ndarray = np.zeros_like(tokens, dtype=int)
             current_context = 0
@@ -610,13 +621,13 @@ class SELECTParser(SQLParser):
         # inner contexts with single tokens whenever possible
         # and creating the reading filters
 
-        self.querying_filters: List[Union[QueryingFilter, str]] = []
         while len(tokens) > 0:
-            r = __recursive_get_querying_filters(tokens, context_depths)
+            r = self.__recursive_get_querying_filters(tokens, context_depths)
             if isinstance(r, ParsingResult):
                 return r
             else:
                 tokens, context_depths = r
+        return None
 
     def validate(self) -> Optional[ParsingResult]:
 
@@ -693,7 +704,7 @@ class SELECTParser(SQLParser):
         casted_filter_values: list[Any] = []
         query_string_parts: list[str] = []
         num_filters = 0
-        for f in self.querying_filters:
+        for f in self.__querying_filters:
             if isinstance(f, QueryingFilter):
                 query_string_part = (
                     "("
@@ -894,13 +905,13 @@ class SELECTParser(SQLParser):
         """
         files: list[str] = []
         dfs: list[pd.DataFrame] = []
-        for table in self.tables:
+        for table in self.__tables:
             name = table.name
             table_select_result = self.__process_select_from_table(
                 table,
                 [
                     f
-                    for f in self.reading_filters
+                    for f in self.__reading_filters
                     if f.column.table_name == name
                 ],
                 self.conn,
@@ -915,7 +926,7 @@ class SELECTParser(SQLParser):
     def __join_tables(
         self,
         dfs: list[pd.DataFrame],
-    ) -> pd.DataFrame:
+    ) -> Union[pd.DataFrame, ParsingResult]:
         """
         Processes the JOIN keywords in the query, joining the tables in the order
         they appear in the statement.
@@ -932,19 +943,27 @@ class SELECTParser(SQLParser):
 
         """
 
-        num_joins = len(self.joining_columns)
+        supported_joins = ["inner", "left", "right", "outer"]
+
+        num_joins = len(self.__joining_columns)
         if num_joins > 0:
             for i in range(num_joins):
                 df_left = dfs[i]
-                left_col = self.joining_columns[i][0]
+                left_col = self.__joining_columns[i][0]
                 df_right = dfs[i + 1]
-                right_col = self.joining_columns[i][1]
-                join_kind = self.joining_columns[i][2]
+                right_col = self.__joining_columns[i][1]
+                join_kind = self.__joining_columns[i][2]
+                if join_kind not in supported_joins:
+                    return ParsingResult(
+                        status=False,
+                        message="Join kind not supported",
+                        data=None,
+                    )
                 df_right.set_index(right_col.fullname, inplace=True)
                 dfs[i + 1] = df_left.join(
                     df_right,
                     on=left_col.fullname,
-                    how=join_kind,
+                    how=join_kind,  # type: ignore
                 )
             return dfs[-1]
         else:
@@ -954,11 +973,9 @@ class SELECTParser(SQLParser):
 
         select_result = self.__process_select_from_tables()
         df = self.__join_tables(select_result["data"])
+        if isinstance(df, ParsingResult):
+            return df
         df = self.__compose_query_and_query_dataframe(df)
-        return {
-            "statusCode": 200,
-            "data": df,
-            "processedFiles": select_result["processedFiles"],
-        }
-
-        pass
+        return ParsingResult(
+            status=True, message=str(select_result["processedFiles"]), data=df
+        )

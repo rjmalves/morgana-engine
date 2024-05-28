@@ -184,7 +184,7 @@ class NotInSetReadingFilter(ReadingFilter):
         return [v for v in values if v not in casted_values]
 
 
-def type_factory(operation_token: SQLToken) -> type[ReadingFilter] | None:
+def type_factory(operation_token: SQLToken) -> type[ReadingFilter]:
     for t in [
         EqualityReadingFilter,
         UnequalityReadingFilter,
@@ -193,4 +193,6 @@ def type_factory(operation_token: SQLToken) -> type[ReadingFilter] | None:
     ]:
         if t.is_filter(operation_token):
             return t
-    return None
+    raise NotImplementedError(
+        f"Operation {operation_token.text} not implemented"
+    )
