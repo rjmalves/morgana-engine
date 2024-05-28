@@ -39,6 +39,7 @@ class SQLTokenType(Enum):
     NOT_IN = "NOT IN"
     AND = "AND"
     OR = "OR"
+    ON = "ON"
     # Common punctuation tokens
     DOT = "."
     COMMA = ","

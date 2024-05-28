@@ -27,8 +27,7 @@ def parse(statement: SQLStatement, conn: Connection) -> ParsingResult:
     parser_type = _factory(statement)
     parser = parser_type(statement, conn)
     validation_result = parser.validate()
-    return validation_result
-    # if validation_result:
-    #     return validation_result
-    # else:
-    #     return parser.parse()
+    if validation_result:
+        return validation_result
+    else:
+        return parser.parse()

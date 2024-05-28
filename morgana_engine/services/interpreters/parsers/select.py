@@ -222,15 +222,16 @@ class SELECTParser(SQLParser):
         if len(columns_with_table) > 1:
             table_name_or_alias = columns_with_table[0][0].text
             column_name = columns_with_table[1][0].text
+            has_parent_in_token = True
 
             # Finds the table with the given name / alias
             table = self.__get_table_from_token_list(table_name_or_alias)
             if isinstance(table, ParsingResult):
                 return table
-
         else:
             table = self.tables[0]
             column_name = columns_with_table[0][0].text
+            has_parent_in_token = False
 
         table_column = list(
             filter(lambda c: c.name == column_name, table.columns)
@@ -241,6 +242,7 @@ class SELECTParser(SQLParser):
                 message=f"Column {column_name} not found in table {table.name}",
                 data=None,
             )
+        table_column[0].has_parent_in_token = has_parent_in_token
         return table_column[0]
 
     def __get_querying_columns(self) -> Optional[ParsingResult]:
@@ -272,9 +274,7 @@ class SELECTParser(SQLParser):
 
     def __get_joining_columns(self) -> Optional[ParsingResult]:
 
-        self.joining_columns: List[Tuple[Column, Column]] = []
-        # Gets tokens between FROM and WHERE (or the end)
-        # for considering as columns
+        self.joining_columns: List[Tuple[Column, Column, str]] = []
         last_index = (
             self.__where_index
             if self.__filtered
@@ -291,7 +291,7 @@ class SELECTParser(SQLParser):
         for left_joining_tokens, right_joining_tokens in zip(
             joining_tokens[:-1], joining_tokens[1:]
         ):
-            cols: List[Column] = []
+            tables: List[Table] = []
             for token_set in [left_joining_tokens, right_joining_tokens]:
                 aliases_tokens = self.__split_by_token_type(
                     token_set, SQLTokenType.AS
@@ -301,12 +301,22 @@ class SELECTParser(SQLParser):
                 if isinstance(table, ParsingResult):
                     return table
 
-            # TODO - split by ON and = for finding the columns
-            # add columns to the
+                tables.append(table)
 
-            self.joining_columns.append(tuple(cols))
+            join_kind_token = left_joining_tokens[-1]
 
-        print(self.joining_columns)
+            on_tokens = self.__split_by_token_type(
+                right_joining_tokens, SQLTokenType.ON
+            )[1]
+
+            joining_column_tokens = self.__split_by_token_type(
+                on_tokens, SQLTokenType.EQUALS
+            )
+            columns = [
+                self.__get_column_from_token_list(column_tokens)
+                for column_tokens in joining_column_tokens
+            ] + [join_kind_token.text.lower()]
+            self.joining_columns.append(tuple(columns))
 
         return None
 
@@ -902,22 +912,53 @@ class SELECTParser(SQLParser):
             "data": dfs,
         }
 
+    def __join_tables(
+        self,
+        dfs: list[pd.DataFrame],
+    ) -> pd.DataFrame:
+        """
+        Processes the JOIN keywords in the query, joining the tables in the order
+        they appear in the statement.
+
+        Parameters:
+        -----------
+        dfs : list[pd.DataFrame]
+            List of dataframes that were read from each table
+
+        Returns:
+        --------
+        pd.DataFrame
+            The dataframe resulting from the JOIN operations.
+
+        """
+
+        num_joins = len(self.joining_columns)
+        if num_joins > 0:
+            for i in range(num_joins):
+                df_left = dfs[i]
+                left_col = self.joining_columns[i][0]
+                df_right = dfs[i + 1]
+                right_col = self.joining_columns[i][1]
+                join_kind = self.joining_columns[i][2]
+                df_right.set_index(right_col.fullname, inplace=True)
+                dfs[i + 1] = df_left.join(
+                    df_right,
+                    on=left_col.fullname,
+                    how=join_kind,
+                )
+            return dfs[-1]
+        else:
+            return dfs[0]
+
     def parse(self) -> ParsingResult:
 
         select_result = self.__process_select_from_tables()
-        print(select_result)
-        # df = self.__process_join_tables(
-        #     select_result["data"], table_join_mappings
-        # )
-        # # The query string must be built here, referencing external
-        # # variables with the correct types.
-        df = select_result["data"][0]
+        df = self.__join_tables(select_result["data"])
         df = self.__compose_query_and_query_dataframe(df)
-        print(df)
-        # return {
-        #     "statusCode": 200,
-        #     "data": df,
-        #     "processedFiles": select_result["processedFiles"],
-        # }
+        return {
+            "statusCode": 200,
+            "data": df,
+            "processedFiles": select_result["processedFiles"],
+        }
 
         pass
