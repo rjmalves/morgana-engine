@@ -15,6 +15,7 @@ class Column:
         "table_alias",
         "has_parent_in_token",
         "partition",
+        "querying",
     ]
 
     name: str
@@ -24,6 +25,7 @@ class Column:
     table_alias: str | None
     has_parent_in_token: bool
     partition: bool
+    querying: bool
 
     @property
     def fullname(self) -> str:

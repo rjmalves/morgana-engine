@@ -164,6 +164,7 @@ class SELECT(Processing):
                         table_alias=table.alias,
                         has_parent_in_token=False,
                         partition=False,
+                        querying=True,
                     )
                 )
             for (
@@ -179,6 +180,7 @@ class SELECT(Processing):
                         table_alias=table.alias,
                         has_parent_in_token=False,
                         partition=True,
+                        querying=True,
                     )
                 )
 

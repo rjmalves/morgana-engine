@@ -24,10 +24,10 @@ def _factory(
 
 
 def parse(statement: SQLStatement, conn: Connection) -> ParsingResult:
-    print("HERE")
     parser_type = _factory(statement)
     parser = parser_type(statement, conn)
     validation_result = parser.validate()
+    return validation_result
     # if validation_result:
     #     return validation_result
     # else:

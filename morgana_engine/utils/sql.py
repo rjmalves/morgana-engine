@@ -1,4 +1,4 @@
-import testsql  # type: ignore
+import sqlparse  # type: ignore
 from morgana_engine.models.parsedsql import Column, Table
 from sqlparse.sql import Token, Identifier, Parenthesis, Comparison  # type: ignore
 from sqlparse.tokens import Newline, Whitespace, Punctuation  # type: ignore
@@ -27,7 +27,7 @@ def filter_spacing_and_punctuation_tokens(tokens: list[Token]) -> list[Token]:
 
 
 def query2tokens(query: str) -> list[Token]:
-    statements = testsql.parse(query)
+    statements = sqlparse.parse(query)
     return filter_spacing_tokens(statements[0].tokens)
 
 

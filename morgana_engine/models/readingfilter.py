@@ -1,11 +1,7 @@
 from abc import ABC
 from typing import TypeVar, Callable
-from sqlparse.sql import Token, Identifier, Parenthesis  # type: ignore
-from morgana_engine.utils.sql import (
-    filter_spacing_and_punctuation_tokens,
-    column_from_token,
-)
-from morgana_engine.models.parsedsql import Table, Column
+from morgana_engine.models.sql import SQLToken, SQLTokenType
+from morgana_engine.models.parsedsql import Column
 
 
 T = TypeVar("T")
@@ -20,8 +16,6 @@ class ReadingFilter(ABC):
 
     Attributes:
     -----------
-    tokens : list[Token]
-        A list of tokens that represent the filter expression.
     column : Column
         The column that the filter is applied to.
     operators : list[str] | None
@@ -30,13 +24,13 @@ class ReadingFilter(ABC):
         A list of values used in the filter expression.
     """
 
-    def __init__(self, tokens: list[Token], table: Table) -> None:
+    def __init__(
+        self, column: Column, operator: SQLToken, values: list[SQLToken]
+    ) -> None:
         super().__init__()
-        self.tokens = tokens
-        self._table = table
-        self._column: Column | None = None
-        self._operators: list[str] | None = None
-        self._values: list[str] | None = None
+        self._column: Column = column
+        self._operator: SQLToken = operator
+        self._values: list[SQLToken] = values
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, self.__class__):
@@ -45,7 +39,7 @@ class ReadingFilter(ABC):
             return all(
                 [
                     self.column == o.column,
-                    self.operators == o.operators,
+                    self.operator == o.operator,
                     self.values == o.values,
                 ]
             )
@@ -60,22 +54,19 @@ class ReadingFilter(ABC):
         Column
             The column object.
         """
-        if self._column is None:
-            token = [t for t in self.tokens if type(t) is Identifier][0]
-            self._column = column_from_token(token, [self._table])
         return self._column
 
     @property
-    def operators(self) -> list[str]:
+    def operator(self) -> SQLToken:
         """
-        Returns a list of operators used in the filter expression.
+        Returns the operator used in the filter expression.
 
         Returns:
         --------
-        list[str]
-            A list of operators.
+        str
+            The operator.
         """
-        raise NotImplementedError
+        return self._operator
 
     @property
     def values(self) -> list[str]:
@@ -87,22 +78,22 @@ class ReadingFilter(ABC):
         list[str]
             A list of values.
         """
-        raise NotImplementedError
+        return [t.text for t in self._values]
 
     @classmethod
-    def is_filter(cls, tokens: list[Token]) -> bool:
+    def is_filter(cls, operation: SQLToken) -> bool:
         """
-        Determines whether the given list of tokens represents a filter.
+        Determines whether the given token represents a filter.
 
         Parameters:
         -----------
-        tokens : list[Token]
-            A list of tokens.
+        operation : SQLToken
+            The token that describes the operation.
 
         Returns:
         --------
         bool
-            True if the list of tokens represents a filter, False otherwise.
+            True if the token represents a filter, False otherwise.
         """
         raise NotImplementedError
 
@@ -131,48 +122,13 @@ class EqualityReadingFilter(ReadingFilter):
     with a equality operator.
     """
 
-    @property
-    def operators(self) -> list[str]:
-        if self._operators is None:
-            self._operators = [
-                [t for t in self.tokens if "Comparison" in str(t.ttype)][
-                    0
-                ].value
-            ]
-        return self._operators
-
-    @property
-    def values(self) -> list[str]:
-        if self._values is None:
-            self._values = [
-                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][0]
-                .value.replace("'", "")
-                .replace('"', "")
-            ]
-        return self._values
-
     @classmethod
-    def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) is Identifier]
-        not_identifiers = [t for t in tokens if type(t) is not Identifier]
-        num_identifiers = len(identifiers)
-        comparisons = [
-            t for t in not_identifiers if "Comparison" in str(t.ttype)
-        ]
-        num_comparison = len(comparisons)
-        num_constants = len(
-            [t for t in not_identifiers if "Token.Literal" in str(t.ttype)]
-        )
-        if all(
-            [n == 1 for n in [num_identifiers, num_comparison, num_constants]]
-        ):
-            if comparisons[0].value in ["=", "!="]:
-                return True
-        return False
+    def is_filter(cls, token: SQLToken) -> bool:
+        return token.type == SQLTokenType.EQUALS
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
         casted_values = self._values = [casting_func(v) for v in self.values]
-        if self.operators[0] == "=":
+        if self.operator.type == SQLTokenType.EQUALS:
             return [v for v in values if v in casted_values]
         else:
             return [v for v in values if v not in casted_values]
@@ -184,112 +140,33 @@ class UnequalityReadingFilter(ReadingFilter):
     with the difference operator.
     """
 
-    def __revert_operator(self, operator: str) -> str:
-        operator_map: dict[str, str] = {
-            ">": "<",
-            "<": ">",
-            ">=": "<=",
-            "<=": ">=",
-        }
-        return operator_map[operator]
-
-    @property
-    def operators(self) -> list[str]:
-        if self._operators is None:
-            self._operators = [
-                [t for t in self.tokens if "Comparison" in str(t.ttype)][
-                    0
-                ].value
-            ]
-            identifier_first = type(self.tokens[0]) is Identifier
-            if not identifier_first:
-                self._operators = [self.__revert_operator(self.operators[0])]
-        return self._operators
-
-    @property
-    def values(self) -> list[str]:
-        if self._values is None:
-            self._values = [
-                [t for t in self.tokens if "Token.Literal" in str(t.ttype)][0]
-                .value.replace("'", "")
-                .replace('"', "")
-            ]
-        return self._values
-
     @classmethod
-    def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) is Identifier]
-        not_identifiers = [t for t in tokens if type(t) is not Identifier]
-        num_identifiers = len(identifiers)
-        comparisons = [
-            t for t in not_identifiers if "Comparison" in str(t.ttype)
+    def is_filter(cls, token: SQLToken) -> bool:
+        return token.type in [
+            SQLTokenType.GREATER,
+            SQLTokenType.GREATER_EQUAL,
+            SQLTokenType.LESS,
+            SQLTokenType.LESS_EQUAL,
         ]
-        num_comparison = len(comparisons)
-        num_constants = len(
-            [t for t in not_identifiers if "Token.Literal" in str(t.ttype)]
-        )
-        if all(
-            [n == 1 for n in [num_identifiers, num_comparison, num_constants]]
-        ):
-            if comparisons[0].value in [">", "<", ">=", "<="]:
-                return True
-        return False
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
         casted_values = [casting_func(v) for v in self.values]
-        if self.operators[0] == ">":
+        if self.operator.type == SQLTokenType.GREATER:
             return [v for v in values if v > casted_values[0]]
-        elif self.operators[0] == "<":
+        elif self.operator.type == SQLTokenType.LESS:
             return [v for v in values if v < casted_values[0]]
-        elif self.operators[0] == ">=":
+        elif self.operator.type == SQLTokenType.GREATER_EQUAL:
             return [v for v in values if v >= casted_values[0]]
-        elif self.operators[0] == "<=":
+        elif self.operator.type == SQLTokenType.LESS_EQUAL:
             return [v for v in values if v <= casted_values[0]]
         return []
 
 
 class InSetReadingFilter(ReadingFilter):
-    @property
-    def operators(self) -> list[str]:
-        if self._operators is None:
-            self._operators = [
-                t.normalized
-                for t in self.tokens
-                if t.normalized in ["IN", "NOT"]
-            ]
-        return self._operators
-
-    @property
-    def values(self) -> list[str]:
-        if self._values is None:
-            collection = filter_spacing_and_punctuation_tokens(
-                [t for t in self.tokens if type(t) is Parenthesis][0].tokens
-            )
-            self._values = collection[0].value.split(",")
-            self._values = [
-                v.strip().replace("'", "").replace('"', "")
-                for v in self._values
-            ]
-        return self._values
 
     @classmethod
-    def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) is Identifier]
-        num_identifiers = len(identifiers)
-        num_in_keywords = len([t for t in tokens if t.normalized == "IN"])
-        num_not_keywords = len([t for t in tokens if t.normalized == "NOT"])
-        num_parenthesis = len([t for t in tokens if type(t) is Parenthesis])
-        return all(
-            [
-                n == 1
-                for n in [
-                    num_identifiers,
-                    num_in_keywords,
-                    num_parenthesis,
-                ]
-            ]
-            + [num_not_keywords == 0]
-        )
+    def is_filter(cls, token: SQLToken) -> bool:
+        return token.type == SQLTokenType.IN
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
         casted_values = self._values = [casting_func(v) for v in self.values]
@@ -297,61 +174,23 @@ class InSetReadingFilter(ReadingFilter):
 
 
 class NotInSetReadingFilter(ReadingFilter):
-    @property
-    def operators(self) -> list[str]:
-        if self._operators is None:
-            self._operators = [
-                t.normalized
-                for t in self.tokens
-                if t.normalized in ["IN", "NOT"]
-            ]
-        return self._operators
-
-    @property
-    def values(self) -> list[str]:
-        if self._values is None:
-            collection = filter_spacing_and_punctuation_tokens(
-                [t for t in self.tokens if type(t) is Parenthesis][0].tokens
-            )
-            self._values = collection[0].value.split(",")
-            self._values = [
-                v.strip().replace("'", "").replace('"', "")
-                for v in self._values
-            ]
-
-        return self._values
 
     @classmethod
-    def is_filter(cls, tokens: list[Token]) -> bool:
-        identifiers = [t for t in tokens if type(t) is Identifier]
-        num_identifiers = len(identifiers)
-        num_in_keywords = len([t for t in tokens if t.normalized == "IN"])
-        num_not_keywords = len([t for t in tokens if t.normalized == "NOT"])
-        num_parenthesis = len([t for t in tokens if type(t) is Parenthesis])
-        return all(
-            [
-                n == 1
-                for n in [
-                    num_identifiers,
-                    num_in_keywords,
-                    num_parenthesis,
-                ]
-            ]
-            + [num_not_keywords == 1]
-        )
+    def is_filter(cls, token: SQLToken) -> bool:
+        return token.type == SQLTokenType.NOT_IN
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
         casted_values = self._values = [casting_func(v) for v in self.values]
         return [v for v in values if v not in casted_values]
 
 
-def type_factory(token_list: list[Token]) -> type[ReadingFilter] | None:
+def type_factory(operation_token: SQLToken) -> type[ReadingFilter] | None:
     for t in [
         EqualityReadingFilter,
         UnequalityReadingFilter,
         InSetReadingFilter,
         NotInSetReadingFilter,
     ]:
-        if t.is_filter(token_list):
+        if t.is_filter(operation_token):
             return t
     return None

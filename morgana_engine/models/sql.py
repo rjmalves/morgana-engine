@@ -34,6 +34,11 @@ class SQLTokenType(Enum):
     UPDATE = "UPDATE"
     RENAME = "RENAME"
     WILDCARD = "*"
+    IN = "IN"
+    NOT = "NOT"
+    NOT_IN = "NOT IN"
+    AND = "AND"
+    OR = "OR"
     # Common punctuation tokens
     DOT = "."
     COMMA = ","
@@ -41,6 +46,7 @@ class SQLTokenType(Enum):
     LPAREN = "("
     RPAREN = ")"
     EQUALS = "="
+    DIFFERENT = "!="
     GREATER = ">"
     GREATER_EQUAL = ">="
     LESS = "<"
@@ -77,6 +83,19 @@ STATEMENT_TOKEN_TYPES = [
     SQLTokenType.UPDATE,
     SQLTokenType.RENAME,
     SQLTokenType.DROP,
+]
+
+OPERATION_TOKEN_TYPES = [
+    SQLTokenType.IN,
+    SQLTokenType.NOT,
+    SQLTokenType.LPAREN,
+    SQLTokenType.RPAREN,
+    SQLTokenType.EQUALS,
+    SQLTokenType.DIFFERENT,
+    SQLTokenType.GREATER,
+    SQLTokenType.GREATER_EQUAL,
+    SQLTokenType.LESS,
+    SQLTokenType.LESS_EQUAL,
 ]
 
 
