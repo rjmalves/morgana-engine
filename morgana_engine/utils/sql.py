@@ -9,3 +9,7 @@ def partitions_in_file(filename: str) -> dict[str, str]:
 
 def partition_value_in_file(filename: str, column: str) -> str | None:
     return partitions_in_file(filename).get(column)
+
+
+def unquote_values(values: list[str]) -> list[str]:
+    return [v.replace("'", "").replace('"', "") for v in values]

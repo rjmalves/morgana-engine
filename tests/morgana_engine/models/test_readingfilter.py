@@ -5,148 +5,112 @@ from morgana_engine.models.readingfilter import (
     InSetReadingFilter,
     NotInSetReadingFilter,
 )
-from morgana_engine.models.parsedsql import Column, Table
-from morgana_engine.utils.sql import query2tokens, filter_spacing_tokens
+from morgana_engine.models.parsedsql import Column
+from morgana_engine.models.sql import SQLToken, SQLTokenType
 import pytest
 
 
 class TestReadingFilter:
-    tokens = query2tokens("SELECT * FROM table WHERE colname > 10")
-    parsed_tokens = filter_spacing_tokens(tokens[-1].tokens[1:])[0].tokens
-    table = Table(
-        name="table",
+    column = Column(
+        name="colname",
         alias=None,
-        columns=[
-            Column(
-                name="colname",
-                alias=None,
-                type_str=None,
-                table_name="table",
-                table_alias=None,
-                has_parent_in_token=False,
-                partition=False,
-            )
-        ],
+        type_str=None,
+        table_name="table",
+        table_alias=None,
+        has_parent_in_token=False,
+        partition=False,
+        querying=True,
     )
 
-    def test_column(self):
-        filter = ReadingFilter(TestReadingFilter.parsed_tokens, self.table)
-        assert filter.column == Column(
-            name="colname",
-            alias=None,
-            type_str=None,
-            table_name="table",
-            table_alias=None,
-            has_parent_in_token=False,
-            partition=False,
-        )
-
     def test_eq(self):
-        with pytest.raises(NotImplementedError):
-            tokens2 = query2tokens("SELECT * FROM table WHERE colname < 10")
-            parsed_tokens2 = filter_spacing_tokens(tokens2[-1].tokens[1:])[
-                0
-            ].tokens
-            filter1 = ReadingFilter(
-                TestReadingFilter.parsed_tokens, self.table
-            )
-            tokens2 = query2tokens("SELECT * FROM table WHERE column < 5")
-            filter2 = ReadingFilter(
-                parsed_tokens2,
-                Table(
-                    name="table",
-                    alias=None,
-                    columns=[
-                        Column(
-                            name="column",
-                            alias=None,
-                            type_str=None,
-                            table_name="table",
-                            table_alias=None,
-                            has_parent_in_token=False,
-                            partition=False,
-                        )
-                    ],
-                ),
-            )
-            assert filter1 == filter1
-            assert filter1 != filter2
+        filter1 = ReadingFilter(
+            TestReadingFilter.column,
+            SQLToken(SQLTokenType.EQUALS, "="),
+            [SQLToken(SQLTokenType.ENTITY, "10")],
+        )
+        filter2 = ReadingFilter(
+            TestReadingFilter.column,
+            SQLToken(SQLTokenType.LESS, "<"),
+            [SQLToken(SQLTokenType.ENTITY, "5")],
+        )
+        assert filter1 == filter1
+        assert filter1 != filter2
 
     def test_is_filter(self):
         with pytest.raises(NotImplementedError):
-            assert ReadingFilter.is_filter(TestReadingFilter.parsed_tokens)
+            assert ReadingFilter.is_filter(SQLToken(SQLTokenType.EQUALS, "="))
 
     def test_apply(self):
         with pytest.raises(NotImplementedError):
-            filter = ReadingFilter(TestReadingFilter.parsed_tokens, self.table)
+            filter = ReadingFilter(
+                TestReadingFilter.column,
+                SQLToken(SQLTokenType.EQUALS, "="),
+                [SQLToken(SQLTokenType.ENTITY, "10")],
+            )
             values = [5, 10, 15, 20]
             casting_func = int
             filter.apply(values, casting_func)
 
 
 class TestEqualityReadingFilter:
-    equal_tokens = query2tokens("SELECT * FROM table WHERE colname = 10")
-    parsed_equal_tokens = filter_spacing_tokens(equal_tokens[-1].tokens[1:])[
-        0
-    ].tokens
-    diff_tokens = query2tokens("SELECT * FROM table WHERE colname != 10")
-    parsed_diff_tokens = filter_spacing_tokens(diff_tokens[-1].tokens[1:])[
-        0
-    ].tokens
-    table = Table(
-        name="table",
+    equal_token = SQLToken(SQLTokenType.EQUALS, "=")
+    diff_token = SQLToken(SQLTokenType.DIFFERENT, "!=")
+    column = Column(
+        name="colname",
         alias=None,
-        columns=[
-            Column(
-                name="colname",
-                alias=None,
-                type_str=None,
-                table_name="table",
-                table_alias=None,
-                has_parent_in_token=False,
-                partition=False,
-            )
-        ],
+        type_str="int",
+        table_name="table",
+        table_alias=None,
+        has_parent_in_token=False,
+        partition=False,
+        querying=True,
     )
 
     def test_is_filter(self):
         assert EqualityReadingFilter.is_filter(
-            TestEqualityReadingFilter.parsed_equal_tokens
+            TestEqualityReadingFilter.equal_token
         )
         assert EqualityReadingFilter.is_filter(
-            TestEqualityReadingFilter.parsed_diff_tokens
+            TestEqualityReadingFilter.diff_token
         )
 
     def test_operators(self):
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_equal_tokens,
-            TestEqualityReadingFilter.table,
+            TestEqualityReadingFilter.column,
+            TestEqualityReadingFilter.equal_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
-        assert filter.operators == ["="]
+        assert (
+            filter.operator.type == TestEqualityReadingFilter.equal_token.type
+        )
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_diff_tokens,
-            TestEqualityReadingFilter.table,
+            TestEqualityReadingFilter.column,
+            TestEqualityReadingFilter.diff_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
-        assert filter.operators == ["!="]
+        assert filter.operator.type == TestEqualityReadingFilter.diff_token.type
 
     def test_values(self):
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_equal_tokens,
-            TestEqualityReadingFilter.table,
+            TestEqualityReadingFilter.column,
+            TestEqualityReadingFilter.equal_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
         assert filter.values == ["10"]
 
     def test_apply(self):
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_equal_tokens,
-            TestEqualityReadingFilter.table,
+            TestEqualityReadingFilter.column,
+            TestEqualityReadingFilter.equal_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
         values = [5, 10, 15, 20]
         casting_func = int
         assert filter.apply(values, casting_func) == [10]
         filter = EqualityReadingFilter(
-            TestEqualityReadingFilter.parsed_diff_tokens,
-            TestEqualityReadingFilter.table,
+            TestEqualityReadingFilter.column,
+            TestEqualityReadingFilter.diff_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
         values = [5, 10, 15, 20]
         casting_func = int
@@ -154,116 +118,114 @@ class TestEqualityReadingFilter:
 
 
 class TestUnequalityReadingFilter:
-    direct_gt_tokens = query2tokens("SELECT * FROM table WHERE colname > 10")
-    parsed_direct_gt_tokens = filter_spacing_tokens(
-        direct_gt_tokens[-1].tokens[1:]
-    )[0].tokens
-    reverse_le_tokens = query2tokens("SELECT * FROM table WHERE 10 <= colname")
-    parsed_reverse_le_tokens = filter_spacing_tokens(
-        reverse_le_tokens[-1].tokens[1:]
-    )[0].tokens
-    table = Table(
-        name="table",
+    gt_token = SQLToken(SQLTokenType.GREATER, ">")
+    le_token = SQLToken(SQLTokenType.LESS_EQUAL, "<=")
+    column = Column(
+        name="colname",
         alias=None,
-        columns=[
-            Column(
-                name="colname",
-                alias=None,
-                type_str=None,
-                table_name="table",
-                table_alias=None,
-                has_parent_in_token=False,
-                partition=False,
-            )
-        ],
+        type_str="int",
+        table_name="table",
+        table_alias=None,
+        has_parent_in_token=False,
+        partition=False,
+        querying=True,
     )
 
     def test_is_filter(self):
         assert UnequalityReadingFilter.is_filter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens
+            TestUnequalityReadingFilter.gt_token
         )
         assert UnequalityReadingFilter.is_filter(
-            TestUnequalityReadingFilter.parsed_reverse_le_tokens
+            TestUnequalityReadingFilter.le_token
         )
 
     def test_operators(self):
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens,
-            TestUnequalityReadingFilter.table,
+            TestUnequalityReadingFilter.column,
+            TestUnequalityReadingFilter.gt_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
-        assert filter.operators == [">"]
+        assert filter.operator.type == TestUnequalityReadingFilter.gt_token.type
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_reverse_le_tokens,
-            TestUnequalityReadingFilter.table,
+            TestUnequalityReadingFilter.column,
+            TestUnequalityReadingFilter.le_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
-        assert filter.operators == [">="]
+        assert filter.operator.type == TestUnequalityReadingFilter.le_token.type
 
     def test_values(self):
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens,
-            TestUnequalityReadingFilter.table,
+            TestUnequalityReadingFilter.column,
+            TestUnequalityReadingFilter.gt_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
         assert filter.values == ["10"]
 
     def test_apply(self):
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_direct_gt_tokens,
-            TestUnequalityReadingFilter.table,
+            TestUnequalityReadingFilter.column,
+            TestUnequalityReadingFilter.gt_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
         values = [5, 10, 15, 20]
         casting_func = int
         assert filter.apply(values, casting_func) == [15, 20]
         filter = UnequalityReadingFilter(
-            TestUnequalityReadingFilter.parsed_reverse_le_tokens,
-            TestUnequalityReadingFilter.table,
+            TestUnequalityReadingFilter.column,
+            TestUnequalityReadingFilter.le_token,
+            [SQLToken(SQLTokenType.ENTITY, "10")],
         )
         values = [5, 10, 15, 20]
         casting_func = int
-        assert filter.apply(values, casting_func) == [10, 15, 20]
+        assert filter.apply(values, casting_func) == [5, 10]
 
 
 class TestInSetReadingFilter:
-    tokens = query2tokens("SELECT * FROM table WHERE colname IN (10, 15)")
-    parsed_tokens = filter_spacing_tokens(tokens[-1].tokens[1:])
-    table = Table(
-        name="table",
+    in_token = SQLToken(SQLTokenType.IN, "IN")
+    column = Column(
+        name="colname",
         alias=None,
-        columns=[
-            Column(
-                name="colname",
-                alias=None,
-                type_str=None,
-                table_name="table",
-                table_alias=None,
-                has_parent_in_token=False,
-                partition=False,
-            )
-        ],
+        type_str="int",
+        table_name="table",
+        table_alias=None,
+        has_parent_in_token=False,
+        partition=False,
+        querying=True,
     )
 
     def test_is_filter(self):
-        assert InSetReadingFilter.is_filter(
-            TestInSetReadingFilter.parsed_tokens
-        )
+        assert InSetReadingFilter.is_filter(TestInSetReadingFilter.in_token)
 
     def test_operators(self):
         filter = InSetReadingFilter(
-            TestInSetReadingFilter.parsed_tokens,
-            TestInSetReadingFilter.table,
+            TestInSetReadingFilter.column,
+            TestInSetReadingFilter.in_token,
+            [
+                SQLToken(SQLTokenType.ENTITY, "10"),
+                SQLToken(SQLTokenType.ENTITY, "15"),
+            ],
         )
-        assert filter.operators == ["IN"]
+        assert filter.operator.type == TestInSetReadingFilter.in_token.type
 
     def test_values(self):
         filter = InSetReadingFilter(
-            TestInSetReadingFilter.parsed_tokens,
-            TestInSetReadingFilter.table,
+            TestInSetReadingFilter.column,
+            TestInSetReadingFilter.in_token,
+            [
+                SQLToken(SQLTokenType.ENTITY, "10"),
+                SQLToken(SQLTokenType.ENTITY, "15"),
+            ],
         )
         assert filter.values == ["10", "15"]
 
     def test_apply(self):
         filter = InSetReadingFilter(
-            TestInSetReadingFilter.parsed_tokens,
-            TestInSetReadingFilter.table,
+            TestInSetReadingFilter.column,
+            TestInSetReadingFilter.in_token,
+            [
+                SQLToken(SQLTokenType.ENTITY, "10"),
+                SQLToken(SQLTokenType.ENTITY, "15"),
+            ],
         )
         values = [5, 10, 15, 20]
         casting_func = int
@@ -271,47 +233,55 @@ class TestInSetReadingFilter:
 
 
 class TestNotInSetReadingFilter:
-    tokens = query2tokens("SELECT * FROM table WHERE colname NOT IN (10, 15)")
-    parsed_tokens = filter_spacing_tokens(tokens[-1].tokens[1:])
-    table = Table(
-        name="table",
+    not_in_token = SQLToken(SQLTokenType.NOT_IN, "NOT IN")
+    column = Column(
+        name="colname",
         alias=None,
-        columns=[
-            Column(
-                name="colname",
-                alias=None,
-                type_str=None,
-                table_name="table",
-                table_alias=None,
-                has_parent_in_token=False,
-                partition=False,
-            )
-        ],
+        type_str="int",
+        table_name="table",
+        table_alias=None,
+        has_parent_in_token=False,
+        partition=False,
+        querying=True,
     )
 
     def test_is_filter(self):
         assert NotInSetReadingFilter.is_filter(
-            TestNotInSetReadingFilter.parsed_tokens
+            TestNotInSetReadingFilter.not_in_token
         )
 
     def test_operators(self):
         filter = NotInSetReadingFilter(
-            TestNotInSetReadingFilter.parsed_tokens,
-            TestNotInSetReadingFilter.table,
+            TestNotInSetReadingFilter.column,
+            TestNotInSetReadingFilter.not_in_token,
+            [
+                SQLToken(SQLTokenType.ENTITY, "10"),
+                SQLToken(SQLTokenType.ENTITY, "15"),
+            ],
         )
-        assert filter.operators == ["NOT", "IN"]
+        assert (
+            filter.operator.type == TestNotInSetReadingFilter.not_in_token.type
+        )
 
     def test_values(self):
         filter = NotInSetReadingFilter(
-            TestNotInSetReadingFilter.parsed_tokens,
-            TestNotInSetReadingFilter.table,
+            TestNotInSetReadingFilter.column,
+            TestNotInSetReadingFilter.not_in_token,
+            [
+                SQLToken(SQLTokenType.ENTITY, "10"),
+                SQLToken(SQLTokenType.ENTITY, "15"),
+            ],
         )
         assert filter.values == ["10", "15"]
 
     def test_apply(self):
         filter = NotInSetReadingFilter(
-            TestNotInSetReadingFilter.parsed_tokens,
-            TestNotInSetReadingFilter.table,
+            TestNotInSetReadingFilter.column,
+            TestNotInSetReadingFilter.not_in_token,
+            [
+                SQLToken(SQLTokenType.ENTITY, "10"),
+                SQLToken(SQLTokenType.ENTITY, "15"),
+            ],
         )
         values = [5, 10, 15, 20]
         casting_func = int

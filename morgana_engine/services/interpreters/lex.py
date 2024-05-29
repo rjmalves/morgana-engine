@@ -6,7 +6,6 @@ from typing import List, Optional
 
 
 class SQLLexer:
-
     @staticmethod
     def _contains_punctuation_token(value: str) -> Optional[SQLTokenType]:
         for punctuation_token in PUNCTUATION_TOKEN_TYPES:

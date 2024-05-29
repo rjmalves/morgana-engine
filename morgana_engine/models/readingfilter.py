@@ -2,6 +2,7 @@ from abc import ABC
 from typing import TypeVar, Callable
 from morgana_engine.models.sql import SQLToken, SQLTokenType
 from morgana_engine.models.parsedsql import Column
+from morgana_engine.utils.sql import unquote_values
 
 
 T = TypeVar("T")
@@ -124,10 +125,12 @@ class EqualityReadingFilter(ReadingFilter):
 
     @classmethod
     def is_filter(cls, token: SQLToken) -> bool:
-        return token.type == SQLTokenType.EQUALS
+        return token.type in [SQLTokenType.EQUALS, SQLTokenType.DIFFERENT]
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
-        casted_values = self._values = [casting_func(v) for v in self.values]
+        casted_values = self._values = [
+            casting_func(v) for v in unquote_values(self.values)
+        ]
         if self.operator.type == SQLTokenType.EQUALS:
             return [v for v in values if v in casted_values]
         else:
@@ -150,7 +153,7 @@ class UnequalityReadingFilter(ReadingFilter):
         ]
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
-        casted_values = [casting_func(v) for v in self.values]
+        casted_values = [casting_func(v) for v in unquote_values(self.values)]
         if self.operator.type == SQLTokenType.GREATER:
             return [v for v in values if v > casted_values[0]]
         elif self.operator.type == SQLTokenType.LESS:
@@ -163,24 +166,26 @@ class UnequalityReadingFilter(ReadingFilter):
 
 
 class InSetReadingFilter(ReadingFilter):
-
     @classmethod
     def is_filter(cls, token: SQLToken) -> bool:
         return token.type == SQLTokenType.IN
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
-        casted_values = self._values = [casting_func(v) for v in self.values]
+        casted_values = self._values = [
+            casting_func(v) for v in unquote_values(self.values)
+        ]
         return [v for v in values if v in casted_values]
 
 
 class NotInSetReadingFilter(ReadingFilter):
-
     @classmethod
     def is_filter(cls, token: SQLToken) -> bool:
         return token.type == SQLTokenType.NOT_IN
 
     def apply(self, values: list[T], casting_func: Callable) -> list[T]:
-        casted_values = self._values = [casting_func(v) for v in self.values]
+        casted_values = self._values = [
+            casting_func(v) for v in unquote_values(self.values)
+        ]
         return [v for v in values if v not in casted_values]
 
 

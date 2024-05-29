@@ -82,8 +82,6 @@ class Schema:
     @property
     def partitions(self) -> dict[str, str]:
         if self.is_table:
-            return {
-                k["name"]: k["type"] for k in self._json_dict["partitions"]
-            }
+            return {k["name"]: k["type"] for k in self._json_dict["partitions"]}
         else:
             return {}

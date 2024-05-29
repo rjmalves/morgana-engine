@@ -28,7 +28,6 @@ from typing import Optional, Union, List, Tuple, Any
 
 
 class SELECTParser(SQLParser):
-
     def __init__(self, statement: SQLStatement, conn: Connection):
         super().__init__(statement, conn)
         self.__tables: List[Table] = []
@@ -111,12 +110,16 @@ class SELECTParser(SQLParser):
 
     @staticmethod
     def __split_by_token_type(
-        tokens: List[SQLToken],
-        token_types: Union[SQLTokenType, List[SQLTokenType]],
-    ) -> List[List[SQLToken]]:
+        tokens: list[SQLToken],
+        token_types: SQLTokenType | list[SQLTokenType],
+    ) -> list[list[SQLToken]]:
         if isinstance(token_types, SQLTokenType):
             token_types = [token_types]
-        tokens_of_type = list(filter(lambda t: t.type in token_types, tokens))
+
+        def __filter_by_token_type(token: SQLToken) -> bool:
+            return token.type in token_types
+
+        tokens_of_type = list(filter(__filter_by_token_type, tokens))
         tokens_indices = (
             [-1] + [tokens.index(c) for c in tokens_of_type] + [len(tokens)]
         )
@@ -128,7 +131,6 @@ class SELECTParser(SQLParser):
         return [tokens[s:e] for s, e in splitting_indices]
 
     def __get_querying_tables(self) -> Optional[ParsingResult]:
-
         last_index = (
             self.__where_index
             if self.__filtered
@@ -243,7 +245,17 @@ class SELECTParser(SQLParser):
         table_column = list(
             filter(lambda c: c.name == column_name, table.columns)
         )
-        if len(table_column) != 1:
+
+        found_column = False
+        if len(table_column) == 1:
+            found_column = True
+        else:
+            table_column = list(
+                filter(lambda c: c.alias == column_name, table.columns)
+            )
+            if len(table_column) == 1:
+                found_column = True
+        if not found_column:
             return ParsingResult(
                 status=False,
                 message=f"Column {column_name} not found in table {table.name}",
@@ -258,6 +270,14 @@ class SELECTParser(SQLParser):
         tokens = self.statement.tokens[
             self.__select_index + 1 : self.__from_index
         ]
+
+        # Shortcut for the wildcard case
+        if any([t.type == SQLTokenType.WILDCARD for t in tokens]):
+            for table in self.__tables:
+                for column in table.columns:
+                    column.querying = True
+            return None
+
         # Splits the tokens by commas
         # into sublists for each column,
         # possibly with aliases
@@ -280,7 +300,6 @@ class SELECTParser(SQLParser):
         return None
 
     def __get_joining_columns(self) -> Optional[ParsingResult]:
-
         last_index = (
             self.__where_index
             if self.__filtered
@@ -290,7 +309,6 @@ class SELECTParser(SQLParser):
 
         joining_tokens = self.__split_by_token_type(tokens, SQLTokenType.JOIN)
         num_joins = len(joining_tokens) - 1
-
         if num_joins == 0:
             return None
 
@@ -429,6 +447,7 @@ class SELECTParser(SQLParser):
                 column_or_result = self.__get_column_from_token_list(
                     column_tokens
                 )
+
                 if isinstance(column_or_result, ParsingResult):
                     return column_or_result
                 else:
@@ -443,7 +462,6 @@ class SELECTParser(SQLParser):
         )
 
     def __get_reading_filters(self) -> Optional[ParsingResult]:
-
         def __add_token_context_depths(tokens: List[SQLToken]) -> np.ndarray:
             context_depths: np.ndarray = np.zeros_like(tokens, dtype=int)
             current_context = 0
@@ -605,7 +623,6 @@ class SELECTParser(SQLParser):
         )
 
     def __get_querying_filters(self) -> Optional[ParsingResult]:
-
         def __add_token_context_depths(tokens: List[SQLToken]) -> np.ndarray:
             context_depths: np.ndarray = np.zeros_like(tokens, dtype=int)
             current_context = 0
@@ -636,7 +653,6 @@ class SELECTParser(SQLParser):
         return None
 
     def validate(self) -> Optional[ParsingResult]:
-
         validators = [
             self.__validate_select_from,
             self.__validate_where,
@@ -655,9 +671,7 @@ class SELECTParser(SQLParser):
 
         return None
 
-    def __dataframe_column_type_casting_keyword(
-        self, column: pd.Series
-    ) -> str:
+    def __dataframe_column_type_casting_keyword(self, column: pd.Series) -> str:
         """
         Checks the column type among all supported data types in the DataFrame
         and returns the keyword that should by used by the casting function
@@ -682,7 +696,6 @@ class SELECTParser(SQLParser):
         self,
         df: pd.DataFrame,
     ) -> pd.DataFrame:
-
         def __cast_unquoting_value(f: QueryingFilter) -> Any:
             value = f.value
             column = f.column.fullname
@@ -801,7 +814,7 @@ class SELECTParser(SQLParser):
         files_to_read = list(set(files_to_read))
         return files_to_read
 
-    def __process_select_from_table(
+    def __select_from_table(
         self, table: Table, filters: list[ReadingFilter], conn: Connection
     ) -> dict:
         """
@@ -885,7 +898,7 @@ class SELECTParser(SQLParser):
             "data": df,
         }
 
-    def __process_select_from_tables(self) -> dict:
+    def __select_from_tables(self) -> dict:
         """
         Processes the SELECT statement for each table separately,
         using the reading_filters for optimizing the file reading steps.
@@ -913,7 +926,7 @@ class SELECTParser(SQLParser):
         dfs: list[pd.DataFrame] = []
         for table in self.__tables:
             name = table.name
-            table_select_result = self.__process_select_from_table(
+            table_select_result = self.__select_from_table(
                 table,
                 [
                     f
@@ -976,8 +989,7 @@ class SELECTParser(SQLParser):
             return dfs[0]
 
     def parse(self) -> ParsingResult:
-
-        select_result = self.__process_select_from_tables()
+        select_result = self.__select_from_tables()
         df = self.__join_tables(select_result["data"])
         if isinstance(df, ParsingResult):
             return df

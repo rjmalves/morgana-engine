@@ -117,7 +117,6 @@ class SQLToken:
 
 
 class SQLStatement:
-
     def __init__(self, tokens: List[SQLToken]) -> None:
         self.tokens = tokens
 
@@ -134,7 +133,6 @@ class ParsingResult:
 
 
 class SQLParser:
-
     def __init__(self, statement: SQLStatement, conn: Connection) -> None:
         self.statement = statement
         self.conn = conn

@@ -24,4 +24,4 @@ def select_lambda_endpoint(
             "body": base64.b64encode(f.read()).decode("utf-8"),
         }
     else:
-        return result.__dict__
+        return {"statusCode": 500, "message": result.message}
