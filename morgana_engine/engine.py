@@ -1,6 +1,8 @@
 from .adapters import connection_factory  # noqa
-from .services import process_query  # noqa
+from .services.interpreters.lex import lex  # noqa
+from .services.interpreters.parse import parse  # noqa
 from io import BytesIO
+import pandas as pd
 import base64
 
 
@@ -8,10 +10,12 @@ def select_lambda_endpoint(
     request_body: dict,
 ) -> dict:
     conn = connection_factory("S3")(request_body["database"])
-    result = process_query(request_body["query"], conn)
+    stmt = lex(request_body["query"])
+    result = parse(stmt, conn)
 
-    if result["statusCode"] == 200:
-        df = result["data"]
+    if result.status:
+        df = result.data
+        assert isinstance(df, pd.DataFrame)
         f = BytesIO()
         df.reset_index(drop=True).to_parquet(f, compression="gzip")
         f.seek(0)
@@ -20,4 +24,4 @@ def select_lambda_endpoint(
             "body": base64.b64encode(f.read()).decode("utf-8"),
         }
     else:
-        return result
+        return {"statusCode": 500, "message": result.message}

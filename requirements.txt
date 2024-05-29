@@ -1,5 +1,4 @@
-sqlparse
-jsonschema
+numpy
 pandas
 python-dotenv
 pyarrow

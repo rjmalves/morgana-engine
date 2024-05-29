@@ -1,13 +1,13 @@
-sqlparse
-jsonschema
+numpy
 pandas
 pandas-stubs
 python-dotenv
 mypy
 pylama
-pytest==8.0.2
+pytest
 pytest-cov
 pyarrow
 boto3
 boto3-stubs
 s3fs>=2023.10.0
+ruff
