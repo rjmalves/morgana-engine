@@ -455,6 +455,9 @@ class SELECTParser(SQLParser):
                     current_context -= 1
             return context_depths
 
+        if self.__where_index == -1:
+            return None
+
         tokens = self.statement.tokens[self.__where_index + 1 :]
         context_depths = __add_token_context_depths(tokens)
 
@@ -613,6 +616,9 @@ class SELECTParser(SQLParser):
                 if t.type == SQLTokenType.RPAREN:
                     current_context -= 1
             return context_depths
+
+        if self.__where_index == -1:
+            return None
 
         tokens = self.statement.tokens[self.__where_index + 1 :]
         context_depths = __add_token_context_depths(tokens)
