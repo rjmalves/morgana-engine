@@ -64,11 +64,11 @@ class SQLTokenType(Enum):
 
 
 PUNCTUATION_TOKEN_TYPES = [
-    SQLTokenType.DOT,
     SQLTokenType.COMMA,
     SQLTokenType.SEMICOLON,
     SQLTokenType.LPAREN,
     SQLTokenType.RPAREN,
+    SQLTokenType.DOT,
     SQLTokenType.EQUALS,
     SQLTokenType.GREATER,
     SQLTokenType.GREATER_EQUAL,

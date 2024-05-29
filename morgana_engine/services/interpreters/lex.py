@@ -24,6 +24,15 @@ class SQLLexer:
             else:
                 # Searches for punctuation inside part
                 punctuation_token = SQLLexer._contains_punctuation_token(part)
+                if punctuation_token == SQLTokenType.DOT:
+                    if all(
+                        [
+                            s.isnumeric()
+                            for s in part.split(SQLTokenType.DOT.value)
+                        ]
+                    ):
+                        result.append(SQLToken(SQLTokenType.ENTITY, part))
+                        continue
                 if punctuation_token:
                     value = punctuation_token.value
                     new_query = part.replace(value, f" {value} ")
@@ -35,4 +44,12 @@ class SQLLexer:
 
 def lex(query: str) -> SQLStatement:
     q = query.strip().replace("\n", "")
-    return SQLStatement(SQLLexer._recursive_lex(q))
+    tokens = SQLLexer._recursive_lex(q)
+
+    def _find_semicolon(t: SQLToken) -> bool:
+        return t.type == SQLTokenType.SEMICOLON
+
+    semicolon = list(filter(_find_semicolon, tokens))
+    if len(semicolon) > 0:
+        tokens = tokens[: tokens.index(semicolon[0])]
+    return SQLStatement(tokens)
