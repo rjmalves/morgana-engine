@@ -1,6 +1,0 @@
-numpy
-pandas
-python-dotenv
-pyarrow
-boto3
-s3fs>=2023.10.0

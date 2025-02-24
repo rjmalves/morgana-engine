@@ -1,0 +1,12 @@
+[package]
+name = "morgana-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-config = "1.5.16"
+aws-sdk-s3 = "1.76.0"
+lambda_http = "0.13.0"
+polars = { version = "0.46.0", features = ["aws", "cloud", "lazy", "parquet", "timezones"] }
+
+tokio = { version = "1", features = ["macros"] }
