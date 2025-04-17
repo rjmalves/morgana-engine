@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 aws-config = "1.5.16"
 aws-sdk-s3 = "1.76.0"
+chrono = "0.4.39"
 lambda_http = "0.13.0"
 polars = { version = "0.46.0", features = ["aws", "cloud", "lazy", "parquet", "timezones"] }
 
