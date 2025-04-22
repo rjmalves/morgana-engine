@@ -65,6 +65,8 @@ impl Display for Token {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum Keyword {
     Select,
+    From,
+    Where,
     Group,
     Order,
     By,
@@ -81,6 +83,8 @@ impl Display for Keyword {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
             Self::Select => "SELECT",
+            Self::From => "FROM",
+            Self::Where => "WHERE",
             Self::Group => "GROUP",
             Self::Order => "ORDER",
             Self::By => "BY",
