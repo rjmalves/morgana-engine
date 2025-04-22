@@ -15,8 +15,9 @@ impl Default for Location {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Stream<'s> {
-    input_string: &'s str,
+    pub input_string: &'s str,
     current_location: Location,
     content: iter::Peekable<str::Chars<'s>>,
 }
@@ -47,16 +48,16 @@ impl<'s> Stream<'s> {
     }
 
     // maybe add peek_and_consume ?
-    fn consume_and_peek(&mut self) -> Option<&char> {
+    pub fn consume_and_peek(&mut self) -> Option<&char> {
         self.next();
         self.peek()
     }
 
-    fn current_location(&self) -> Location {
+    pub fn current_location(&self) -> Location {
         self.current_location
     }
 
-    fn consume_while<P: FnMut(&char) -> bool>(
+    pub fn consume_while<P: FnMut(&char) -> bool>(
         &mut self,
         consuming_condition: P,
     ) -> SafeTakeWhile<'_, 's, P> {
@@ -67,7 +68,7 @@ impl<'s> Stream<'s> {
     }
 }
 
-struct SafeTakeWhile<'t, 's, P> {
+pub struct SafeTakeWhile<'t, 's, P> {
     stream: &'t mut Stream<'s>,
     consuming_condition: P,
 }

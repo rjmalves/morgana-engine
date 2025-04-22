@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Token {
     Keyword(Keyword),
     Identifier(String),
@@ -25,6 +25,12 @@ pub(crate) enum Token {
     Comma,
     Semicolon,
     EndOfFile,
+}
+
+impl Token {
+    pub(super) fn is_part_of_ident_or_keyword(chr: &char) -> bool {
+        chr.is_ascii_lowercase() || chr.is_ascii_uppercase() || chr.is_ascii_digit() || *chr == '_'
+    }
 }
 
 impl Display for Token {
@@ -56,7 +62,7 @@ impl Display for Token {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum Keyword {
     Select,
     Group,
@@ -68,6 +74,7 @@ pub(crate) enum Keyword {
     Right,
     Join,
     On,
+    None,
 }
 
 impl Display for Keyword {
@@ -83,11 +90,12 @@ impl Display for Keyword {
             Self::Right => "RIGHT",
             Self::Join => "JOIN",
             Self::On => "ON",
+            Self::None => "",
         })
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Separator {
     Space,
     Tab,
