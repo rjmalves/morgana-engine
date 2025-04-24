@@ -1,5 +1,6 @@
 use super::stream::{Location, Stream};
 use super::token::{Keyword, Separator, Token};
+use chrono::prelude::*;
 
 /// Stores both the [`Token`] and its starting location in the input string.
 #[derive(PartialEq)]
@@ -32,6 +33,7 @@ pub(crate) enum TokenizerErrorKind {
     UnsupportedToken(char),
     UnexpectedWhileParsingOperator { unexpected: char, operator: Token },
     OperatorNotClosed(Token),
+    InvalidNumberNotation,
     StringNotClosed,
     Other(String),
 }
@@ -120,7 +122,7 @@ impl<'s> Tokenizer<'s> {
             ')' => self.consume(Token::RightParenthesis),
             ',' => self.consume(Token::Comma),
             ';' => self.consume(Token::Semicolon),
-            '"' | '\'' => self.tokenize_string(),
+            '"' | '\'' => self.tokenize_string_or_datetime(),
             '0'..'9' => self.tokenize_number(),
             _ if Token::is_part_of_ident_or_keyword(chr) => self.tokenize_keyword_or_identifier(),
             _ => {
@@ -143,29 +145,45 @@ impl<'s> Tokenizer<'s> {
         })
     }
 
-    fn tokenize_string(&mut self) -> TokenizerResult {
+    fn tokenize_string_or_datetime(&mut self) -> TokenizerResult {
         let quote = self.stream.next().unwrap();
 
-        let string = self.stream.consume_while(|chr| *chr != quote).collect();
+        let string: String = self.stream.consume_while(|chr| *chr != quote).collect();
 
         if self.stream.next().is_some_and(|chr| chr == quote) {
-            // TODO - match cases for checking Datetime for ISO 8601 regex
-            Ok(Token::String(string))
+            // TODO - improve Datetime matching without needing the full RFC2822 string
+            match string.parse::<DateTime<Utc>>() {
+                Ok(_) => Ok(Token::Datetime(string)),
+                Err(_) => Ok(Token::String(string)),
+            }
         } else {
             self.error(TokenizerErrorKind::StringNotClosed)
         }
     }
 
     fn tokenize_number(&mut self) -> TokenizerResult {
-        // TODO - improve logic for capturing also
-        // 1. real numbers in .f notation (123.456)
-        // The matching for this case must check if there is only one '.' char
-        // 2. real number in scentific notation (1.63e+05, 0.50e-02, etc.)
-        // The matching for this case must be somewhat smart, since there
-        // can be only 1 'e' char, followed by +, - or numbers
-        Ok(Token::Integer(
-            self.stream.consume_while(char::is_ascii_digit).collect(),
-        ))
+        let string: String = self
+            .stream
+            .consume_while(|chr| {
+                chr.is_ascii_digit()
+                    || (*chr == '.')
+                    || (*chr == '+')
+                    || (*chr == '-')
+                    || (*chr == 'e')
+                    || (*chr == 'E')
+            })
+            .collect();
+
+        let integer_parsing_result = string.parse::<i32>();
+        let real_parsing_result = string.parse::<f32>();
+
+        if integer_parsing_result.is_ok() && !string.contains(".") {
+            Ok(Token::Integer(string))
+        } else if real_parsing_result.is_ok() {
+            Ok(Token::Real(string))
+        } else {
+            self.error(TokenizerErrorKind::InvalidNumberNotation)
+        }
     }
 
     fn tokenize_keyword_or_identifier(&mut self) -> TokenizerResult {
@@ -269,6 +287,7 @@ mod tests {
             ])
         )
     }
+
     #[test]
     fn tokenize_select_with_integer_filter() {
         let sql = "SELECT date, value FROM samples WHERE value > 10;";
@@ -296,6 +315,105 @@ mod tests {
                 Token::GreaterThan,
                 Token::Separator(Separator::Space),
                 Token::Integer("10".into()),
+                Token::Semicolon,
+                Token::EndOfFile,
+            ])
+        )
+    }
+
+    #[test]
+    fn tokenize_select_with_real_float_filter() {
+        let sql = "SELECT date, value FROM samples WHERE value > 10.0;";
+
+        let mut tok = Tokenizer::new(sql);
+
+        assert_eq!(
+            tok.tokenize(),
+            Ok(vec![
+                Token::Keyword(Keyword::Select),
+                Token::Separator(Separator::Space),
+                Token::Identifier("date".into()),
+                Token::Comma,
+                Token::Separator(Separator::Space),
+                Token::Identifier("value".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::From),
+                Token::Separator(Separator::Space),
+                Token::Identifier("samples".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::Where),
+                Token::Separator(Separator::Space),
+                Token::Identifier("value".into()),
+                Token::Separator(Separator::Space),
+                Token::GreaterThan,
+                Token::Separator(Separator::Space),
+                Token::Real("10.0".into()),
+                Token::Semicolon,
+                Token::EndOfFile,
+            ])
+        )
+    }
+
+    #[test]
+    fn tokenize_select_with_real_scientific_filter() {
+        let sql = "SELECT date, value FROM samples WHERE value > 1e+1;";
+
+        let mut tok = Tokenizer::new(sql);
+
+        assert_eq!(
+            tok.tokenize(),
+            Ok(vec![
+                Token::Keyword(Keyword::Select),
+                Token::Separator(Separator::Space),
+                Token::Identifier("date".into()),
+                Token::Comma,
+                Token::Separator(Separator::Space),
+                Token::Identifier("value".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::From),
+                Token::Separator(Separator::Space),
+                Token::Identifier("samples".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::Where),
+                Token::Separator(Separator::Space),
+                Token::Identifier("value".into()),
+                Token::Separator(Separator::Space),
+                Token::GreaterThan,
+                Token::Separator(Separator::Space),
+                Token::Real("1e+1".into()),
+                Token::Semicolon,
+                Token::EndOfFile,
+            ])
+        )
+    }
+
+    #[test]
+    fn tokenize_select_with_datetime_filter() {
+        let sql = "SELECT date, value FROM samples WHERE date > '2025-01-01T12:00:09Z';";
+
+        let mut tok = Tokenizer::new(sql);
+
+        assert_eq!(
+            tok.tokenize(),
+            Ok(vec![
+                Token::Keyword(Keyword::Select),
+                Token::Separator(Separator::Space),
+                Token::Identifier("date".into()),
+                Token::Comma,
+                Token::Separator(Separator::Space),
+                Token::Identifier("value".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::From),
+                Token::Separator(Separator::Space),
+                Token::Identifier("samples".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::Where),
+                Token::Separator(Separator::Space),
+                Token::Identifier("date".into()),
+                Token::Separator(Separator::Space),
+                Token::GreaterThan,
+                Token::Separator(Separator::Space),
+                Token::Datetime("2025-01-01T12:00:09Z".into()),
                 Token::Semicolon,
                 Token::EndOfFile,
             ])
