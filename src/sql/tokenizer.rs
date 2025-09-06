@@ -419,4 +419,37 @@ mod tests {
             ])
         )
     }
+
+    #[test]
+    fn tokenize_select_with_string_filter() {
+        let sql = "SELECT date, name FROM people WHERE name != 'Foo';";
+
+        let mut tok = Tokenizer::new(sql);
+
+        assert_eq!(
+            tok.tokenize(),
+            Ok(vec![
+                Token::Keyword(Keyword::Select),
+                Token::Separator(Separator::Space),
+                Token::Identifier("date".into()),
+                Token::Comma,
+                Token::Separator(Separator::Space),
+                Token::Identifier("name".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::From),
+                Token::Separator(Separator::Space),
+                Token::Identifier("people".into()),
+                Token::Separator(Separator::Space),
+                Token::Keyword(Keyword::Where),
+                Token::Separator(Separator::Space),
+                Token::Identifier("name".into()),
+                Token::Separator(Separator::Space),
+                Token::NotEqual,
+                Token::Separator(Separator::Space),
+                Token::String("Foo".into()),
+                Token::Semicolon,
+                Token::EndOfFile,
+            ])
+        )
+    }
 }
